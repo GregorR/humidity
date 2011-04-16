@@ -10,7 +10,7 @@ PORTMIDIFILE_OS=portmidifile.o portmidifilealloc.o portmidistream.o
 all: libportmidifile.a
 
 libportmidifile.a: $(PORTMIDIFILE_OS)
-	$(AR) $(ARFLAGS) libportmidifile.a $<
+	$(AR) $(ARFLAGS) libportmidifile.a $(PORTMIDIFILE_OS)
 	$(RANLIB) libportmidifile.a
 
 %.o: %.c

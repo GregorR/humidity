@@ -92,6 +92,22 @@ PmError Pmf_StreamPoll(PmfStream *stream)
     return FALSE;
 }
 
+/* is the stream empty? */
+PmError Pmf_StreamEmpty(PmfStream *stream)
+{
+    int i;
+    PmfFile *file;
+    PmfTrack *track;
+
+    file = stream->file;
+    for (i = 0; i < file->trackCt; i++) {
+        track = file->tracks[i];
+        if (track->head) return FALSE;
+    }
+
+    return TRUE;
+}
+
 /* read events from the stream (loses ownership of events) */
 int Pmf_StreamRead(PmfStream *stream, PmfEvent **into, int32_t length)
 {
@@ -183,7 +199,7 @@ uint32_t Pmf_StreamGetTick(PmfStream *stream, PtTimestamp timestamp)
         timestamp--;
         tsus = 1000 - stream->tempoUs;
     }
-    tsus += timestamp * 1000;
+    tsus += (uint64_t) timestamp * 1000;
 
     /* tempo is in microseconds per quarter note, ticks are timeDivision per
      * quarter note, so the algo is:

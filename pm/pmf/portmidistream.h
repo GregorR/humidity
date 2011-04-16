@@ -31,6 +31,9 @@ PmfFile *Pmf_CloseStream(PmfStream *stream);
 /* poll for events from the stream */
 PmError Pmf_StreamPoll(PmfStream *stream);
 
+/* is the stream empty? */
+PmError Pmf_StreamEmpty(PmfStream *stream);
+
 /* read events from the stream (loses ownership of events) */
 int Pmf_StreamRead(PmfStream *stream, PmfEvent **into, int32_t length);
 

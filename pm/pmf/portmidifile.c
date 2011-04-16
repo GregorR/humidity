@@ -129,7 +129,6 @@ void Pmf_PushTrack(PmfFile *file, PmfTrack *track)
         newTracks = Pmf_Malloc((file->trackCt + 1) * sizeof(PmfTrack *));
         memcpy(newTracks, file->tracks, file->trackCt * sizeof(PmfTrack *));
         newTracks[file->trackCt++] = track;
-        fprintf(stderr, "Track count is now %d\n", (int) file->trackCt);
         AL.free(file->tracks);
         file->tracks = newTracks;
     } else {
