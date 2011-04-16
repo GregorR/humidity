@@ -158,7 +158,7 @@ PmError Pmf_StreamWriteOne(PmfStream *stream, int trackno, PmfEvent *event)
 
     /* first correct the event's delta time */
     if (event->deltaTm == 0) {
-        if (event->e.timestamp != 0) {
+        if (event->absoluteTm == 0 && event->e.timestamp != 0) {
             /* OK, convert back the timestamp */
             event->absoluteTm = Pmf_StreamGetTick(stream, event->e.timestamp);
         }
