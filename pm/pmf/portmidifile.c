@@ -39,11 +39,13 @@ static void *pmfCalloc(size_t sz)
 /* internal functions */
 static PmError Pmf_ReadMidiHeader(PmfFile **into, FILE *from);
 static PmError Pmf_ReadMidiTrack(PmfFile *file, FILE *from);
-static PmError Pmf_ReadMidiEvent(PmfTrack *track, FILE *from, uint32_t *sz);
+static PmError Pmf_ReadMidiEvent(PmfTrack *track, FILE *from, uint8_t *status, uint32_t *sz);
 static PmError Pmf_ReadMidiBignum(uint32_t *into, FILE *from, uint32_t *sz);
 
+#define BAD_DATA { *((int *) 0) = 0; return pmBadData; }
+
 #define MIDI_READ_N(into, fh, n) do { \
-    if (fread((into), 1, n, (fh)) != n) return pmBadData; \
+    if (fread((into), 1, n, (fh)) != n) BAD_DATA; \
 } while (0)
 
 #define MIDI_READ1(into, fh) do { \
@@ -65,6 +67,9 @@ static PmError Pmf_ReadMidiBignum(uint32_t *into, FILE *from, uint32_t *sz);
              (__mrbuf[2] << 8) + \
               __mrbuf[3]; \
 } while (0)
+
+/* only some message types have a data2 field */
+#define TYPE_HAS_DATA2(status) (!(status >= 0xC0 && status <= 0xDF))
 
 /* END MISCELLANY */
 
@@ -104,7 +109,7 @@ void Pmf_FreeTrack(PmfTrack *track)
     PmfEvent *ev = track->head, *next;
     while (ev) {
         next = ev->next;
-        AL.free(ev);
+        Pmf_FreeEvent(ev);
         ev = next;
     }
     AL.free(track);
@@ -124,6 +129,7 @@ void Pmf_PushTrack(PmfFile *file, PmfTrack *track)
         newTracks = pmfMalloc((file->trackCt + 1) * sizeof(PmfTrack *));
         memcpy(newTracks, file->tracks, file->trackCt * sizeof(PmfTrack *));
         newTracks[file->trackCt++] = track;
+        fprintf(stderr, "Track count is now %d\n", (int) file->trackCt);
         AL.free(file->tracks);
         file->tracks = newTracks;
     } else {
@@ -141,6 +147,7 @@ PmfEvent *Pmf_AllocEvent()
 
 void Pmf_FreeEvent(PmfEvent *event)
 {
+    if (event->meta) Pmf_FreeMeta(event->meta);
     AL.free(event);
 }
 
@@ -161,6 +168,19 @@ void Pmf_PushEvent(PmfTrack *track, PmfEvent *event)
         track->head = track->tail = event;
         event->absoluteTm = event->deltaTm;
     }
+}
+
+/* meta-events have extra fields */
+PmfMeta *Pmf_AllocMeta(uint32_t length)
+{
+    PmfMeta *ret = pmfCalloc(sizeof(PmfMeta) + length);
+    ret->length = length;
+    return ret;
+}
+
+void Pmf_FreeMeta(PmfMeta *meta)
+{
+    AL.free(meta);
 }
 
 /* read in a MIDI file */
@@ -187,14 +207,14 @@ static PmError Pmf_ReadMidiHeader(PmfFile **into, FILE *from)
     uint32_t chunkSize;
 
     /* check that the magic is right */
-    if (fread(magic, 1, 4, from) != 4) return pmBadData;
-    if (memcmp(magic, "MThd", 4)) return pmBadData;
+    if (fread(magic, 1, 4, from) != 4) BAD_DATA;
+    if (memcmp(magic, "MThd", 4)) BAD_DATA;
 
     file = Pmf_AllocFile();
 
     /* get the chunk size */
     MIDI_READ4(chunkSize, from);
-    if (chunkSize != 6) return pmBadData;
+    if (chunkSize != 6) BAD_DATA;
 
     MIDI_READ2(file->format, from);
     MIDI_READ2(file->expectedTracks, from);
@@ -209,12 +229,13 @@ static PmError Pmf_ReadMidiTrack(PmfFile *file, FILE *from)
     PmfTrack *track;
     PmError perr;
     char magic[4];
+    uint8_t status;
     uint32_t chunkSize;
     uint32_t rd;
 
     /* make sure it's a track */
-    if (fread(magic, 1, 4, from) != 4) return pmBadData;
-    if (memcmp(magic, "MTrk", 4)) return pmBadData;
+    if (fread(magic, 1, 4, from) != 4) BAD_DATA;
+    if (memcmp(magic, "MTrk", 4)) BAD_DATA;
 
     track = Pmf_NewTrack(file);
 
@@ -222,16 +243,17 @@ static PmError Pmf_ReadMidiTrack(PmfFile *file, FILE *from)
     MIDI_READ4(chunkSize, from);
 
     /* and read it */
+    status = 0;
     while (chunkSize > 0) {
-        if ((perr = Pmf_ReadMidiEvent(track, from, &rd))) return perr;
-        if (rd > chunkSize) return pmBadData;
+        if ((perr = Pmf_ReadMidiEvent(track, from, &status, &rd))) return perr;
+        if (rd > chunkSize) BAD_DATA;
         chunkSize -= rd;
     }
 
     return pmNoError;
 }
 
-static PmError Pmf_ReadMidiEvent(PmfTrack *track, FILE *from, uint32_t *sz)
+static PmError Pmf_ReadMidiEvent(PmfTrack *track, FILE *from, uint8_t *pstatus, uint32_t *sz)
 {
     PmfEvent *event;
     PmError perr;
@@ -248,10 +270,62 @@ static PmError Pmf_ReadMidiEvent(PmfTrack *track, FILE *from, uint32_t *sz)
 
     /* and the rest */
     MIDI_READ1(status, from);
-    MIDI_READ1(data1, from);
-    MIDI_READ1(data2, from);
-    event->e.message = Pm_Message(status, data1, data2);
+    rd++;
 
+    /* hopefully it's a simple event */
+    if (status < 0xF0) {
+        if (status < 0x80) {
+            /* status is from last event */
+            data1 = status;
+            status = *pstatus;
+        } else {
+            MIDI_READ1(data1, from); rd++;
+        }
+
+        /* not all have data2 (argh) */
+        if (TYPE_HAS_DATA2(status)) {
+            MIDI_READ1(data2, from); rd++;
+        }
+
+    } else if (status == 0xF0 || status == 0xF7 || status == 0xFF) { /* SysEx or meta */
+        uint8_t mtype;
+        uint32_t srd, length;
+        PmfMeta *meta;
+
+        /* meta type */
+        if (status == 0xFF) { /* actual meta */
+            MIDI_READ1(mtype, from);
+            rd++;
+        } else {
+            mtype = status;
+        }
+
+        /* data length */
+        if ((perr = Pmf_ReadMidiBignum(&length, from, &srd))) return perr;
+        rd += srd;
+
+        meta = Pmf_AllocMeta(length);
+        meta->type = mtype;
+        event->meta = meta;
+
+        /* and the data itself */
+        if (fread(meta->data, 1, length, from) != length) BAD_DATA;
+        rd += length;
+
+        /* carry over some data for convenience */
+        data1 = data2 = 0;
+        if (length >= 1) data1 = meta->data[0];
+        if (length >= 2) data2 = meta->data[1];
+
+    } else {
+        fprintf(stderr, "Unrecognized MIDI event type %02X!\n", status);
+        BAD_DATA;
+
+    }
+
+    event->e.message = Pm_Message(status, data1, data2);
+    *pstatus = status;
+    *sz = rd;
     return pmNoError;
 }
 
@@ -263,7 +337,7 @@ static PmError Pmf_ReadMidiBignum(uint32_t *into, FILE *from, uint32_t *sz)
 
     *sz = 0;
     while (more) {
-        if (fread(&cur, 1, 1, from) != 1) return pmBadData;
+        if (fread(&cur, 1, 1, from) != 1) BAD_DATA;
         (*sz)++;
 
         /* is there more? */
@@ -283,4 +357,4 @@ static PmError Pmf_ReadMidiBignum(uint32_t *into, FILE *from, uint32_t *sz)
 }
 
 /* write out a MIDI file */
-PmError Pmf_WriteMidiFile(FILE *into, PmfFile *from) {return pmBadData;}
+PmError Pmf_WriteMidiFile(FILE *into, PmfFile *from) { BAD_DATA; }

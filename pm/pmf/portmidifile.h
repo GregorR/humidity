@@ -12,6 +12,7 @@
 typedef struct __PmfFile PmfFile;
 typedef struct __PmfTrack PmfTrack;
 typedef struct __PmfEvent PmfEvent;
+typedef struct __PmfMeta PmfMeta;
 typedef struct __PmfAllocators PmfAllocators;
 
 /* pluggable allocators */
@@ -48,11 +49,21 @@ struct __PmfEvent {
     PmfEvent *next;
     uint32_t deltaTm, absoluteTm;
     PmEvent e;
+    PmfMeta *meta;
 };
 PmfEvent *Pmf_AllocEvent(void);
 void Pmf_FreeEvent(PmfEvent *event);
 PmfEvent *Pmf_NewEvent(PmfTrack *track);
 void Pmf_PushEvent(PmfTrack *track, PmfEvent *event);
+
+/* meta-events have extra fields */
+struct __PmfMeta {
+    uint8_t type;
+    uint32_t length;
+    unsigned char data[1];
+};
+PmfMeta *Pmf_AllocMeta(uint32_t length);
+void Pmf_FreeMeta(PmfMeta *meta);
 
 /* read in a MIDI file */
 PmError Pmf_ReadMidiFile(PmfFile **into, FILE *from);
