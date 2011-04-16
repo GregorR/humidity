@@ -34,7 +34,8 @@
 #define Pm_MessageChannel(msg) (Pm_MessageStatus(msg)&0xF)
 
 PmfStream *stream = NULL;
-PortMidiStream *ostream = NULL;
+PmfStream *ostream = NULL;
+char *ofile = NULL;
 
 void dump(PtTimestamp timestamp, void *ignore);
 
@@ -43,70 +44,32 @@ int main(int argc, char **argv)
     FILE *f;
     PmError perr;
     PtError pterr;
-    PmfFile *pf;
-    int argi, i;
-    char *arg, *nextarg, *file;
+    PmfFile *pf, *pfo;
 
-    PmDeviceID dev = -1;
-    int list = 0;
-    file = NULL;
-
-    for (argi = 1; argi < argc; argi++) {
-        arg = argv[argi];
-        nextarg = argv[argi+1];
-        if (arg[0] == '-') {
-            if (!strcmp(arg, "-l")) {
-                list = 1;
-            } else if (!strcmp(arg, "-o") && nextarg) {
-                dev = atoi(nextarg);
-                argi++;
-            } else {
-                fprintf(stderr, "Invalid invocation.\n");
-                exit(1);
-            }
-        } else {
-            file = arg;
-        }
+    if (argc < 3) {
+        fprintf(stderr, "Use: streamcopyfile <in> <out>\n");
+        return 1;
     }
 
-    PSF(perr, Pm_Initialize, ());
     PSF(perr, Pmf_Initialize, ());
     PTSF(pterr, Pt_Start, (1, dump, NULL));
 
-    /* list devices */
-    if (list) {
-        int ct = Pm_CountDevices();
-        PmDeviceID def = Pm_GetDefaultInputDeviceID();
-        const PmDeviceInfo *devinf;
-
-        for (i = 0; i < ct; i++) {
-            devinf = Pm_GetDeviceInfo(i);
-            printf("%d%s: %s%s %s\n", i, (def == i) ? "*" : "",
-                (devinf->input) ? "I" : "",
-                (devinf->output) ? "O" : "",
-                devinf->name);
-        }
-    }
-
-    /* choose device */
-    if (dev == -1) {
-        fprintf(stderr, "No device selected.\n");
-        exit(1);
-    }
-
     /* open it for input */
-    PSF(perr, Pm_OpenOutput, (&ostream, dev, NULL, 1024, NULL, NULL, 0));
-
-    /* open it for input */
-    SF(f, fopen, NULL, (file, "rb"));
+    SF(f, fopen, NULL, (argv[1], "rb"));
+    ofile = argv[2];
 
     /* and read it */
     PSF(perr, Pmf_ReadMidiFile, (&pf, f));
     fclose(f);
 
+    pfo = Pmf_AllocFile();
+    pfo->timeDivision = 480;
+
     /* now start running */
     stream = Pmf_OpenStream(pf);
+    ostream = Pmf_OpenStream(pfo);
     Pmf_StartStream(stream, Pt_Time());
+    Pmf_StartStream(ostream, Pt_Time());
 
     while (1) Pt_Sleep(1<<30);
 
@@ -119,7 +82,7 @@ void dump(PtTimestamp timestamp, void *ignore)
     int track;
     PmEvent ev;
 
-    if (stream == NULL) return;
+    if (stream == NULL || ostream == NULL) return;
 
     while (Pmf_StreamRead(stream, &event, &track, 1) == 1) {
         ev = event->e;
@@ -132,12 +95,24 @@ void dump(PtTimestamp timestamp, void *ignore)
                 uint32_t tempo = (data[0] << 16) +
                     (data[1] << 8) +
                      data[2];
+                tempo /= 1000;
                 Pmf_StreamSetTempoTick(stream, &ts, event->absoluteTm, tempo);
             }
+            Pmf_FreeEvent(event);
         } else {
-            Pm_WriteShort(ostream, 0, ev.message);
+            Pmf_StreamWriteOne(ostream, track, event);
         }
+    }
 
-        Pmf_FreeEvent(event);
+    if (Pmf_StreamEmpty(stream) == TRUE) {
+        PmfFile *of;
+        FILE *ofh;
+        Pmf_FreeFile(Pmf_CloseStream(stream));
+        of = Pmf_CloseStream(ostream);
+        SF(ofh, fopen, NULL, (ofile, "wb"));
+        Pmf_WriteMidiFile(ofh, of);
+        fclose(ofh);
+        Pmf_FreeFile(of);
+        exit(0);
     }
 }

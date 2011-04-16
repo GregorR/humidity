@@ -35,7 +35,7 @@ PmError Pmf_StreamPoll(PmfStream *stream);
 PmError Pmf_StreamEmpty(PmfStream *stream);
 
 /* read events from the stream (loses ownership of events) */
-int Pmf_StreamRead(PmfStream *stream, PmfEvent **into, int32_t length);
+int Pmf_StreamRead(PmfStream *stream, PmfEvent **into, int *track, int32_t length);
 
 /* write events into the stream (takes ownership of events) */
 PmError Pmf_StreamWrite(PmfStream *stream, int track, PmfEvent **events, int32_t length);

@@ -109,7 +109,7 @@ PmError Pmf_StreamEmpty(PmfStream *stream)
 }
 
 /* read events from the stream (loses ownership of events) */
-int Pmf_StreamRead(PmfStream *stream, PmfEvent **into, int32_t length)
+int Pmf_StreamRead(PmfStream *stream, PmfEvent **into, int *ptrack, int32_t length)
 {
     int rd = 0, i;
     PmfFile *file;
@@ -124,10 +124,12 @@ int Pmf_StreamRead(PmfStream *stream, PmfEvent **into, int32_t length)
         track = file->tracks[i];
         if (track->head && track->head->absoluteTm <= curTick) {
             /* read in this one */
-            into[rd++] = track->head;
+            into[rd] = track->head;
+            ptrack[rd] = i;
             track->head->e.timestamp = Pmf_StreamGetTimestamp(stream, NULL, track->head->absoluteTm);
             track->head = track->head->next;
             if (!(track->head)) track->tail = NULL;
+            rd++;
 
             /* stop if we're out of room */
             if (rd >= length) break;
