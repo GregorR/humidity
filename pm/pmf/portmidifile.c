@@ -39,8 +39,14 @@ static void *pmfCalloc(size_t sz)
 /* internal functions */
 static PmError Pmf_ReadMidiHeader(PmfFile **into, FILE *from);
 static PmError Pmf_ReadMidiTrack(PmfFile *file, FILE *from);
-static PmError Pmf_ReadMidiEvent(PmfTrack *track, FILE *from, uint8_t *status, uint32_t *sz);
+static PmError Pmf_ReadMidiEvent(PmfTrack *track, FILE *from, uint8_t *pstatus, uint32_t *sz);
 static PmError Pmf_ReadMidiBignum(uint32_t *into, FILE *from, uint32_t *sz);
+static PmError Pmf_WriteMidiHeader(FILE *into, PmfFile *from);
+static PmError Pmf_WriteMidiTrack(FILE *into, PmfTrack *track);
+static PmError Pmf_WriteMidiEvent(FILE *into, PmfEvent *event, uint8_t *pstatus);
+static uint32_t Pmf_GetMidiEventLength(PmfEvent *event, uint8_t *pstatus);
+static PmError Pmf_WriteMidiBignum(FILE *into, uint32_t val);
+static uint32_t Pmf_GetMidiBignumLength(uint32_t val);
 
 #define BAD_DATA { *((int *) 0) = 0; return pmBadData; }
 
@@ -66,6 +72,24 @@ static PmError Pmf_ReadMidiBignum(uint32_t *into, FILE *from, uint32_t *sz);
              (__mrbuf[1] << 16) + \
              (__mrbuf[2] << 8) + \
               __mrbuf[3]; \
+} while (0)
+
+#define MIDI_WRITE1(fh, val) do { \
+    fwrite(&(val), 1, 1, fh); \
+} while (0)
+
+#define MIDI_WRITE2(fh, val) do { \
+    fprintf(fh, "%c%c", \
+        (char) (((val) & 0xFF00) >> 8), \
+        (char) ( (val) & 0x00FF)); \
+} while (0)
+
+#define MIDI_WRITE4(fh, val) do { \
+    fprintf(fh, "%c%c%c%c", \
+        (char) (((val) & 0xFF000000) >> 24), \
+        (char) (((val) & 0x00FF0000) >> 16), \
+        (char) (((val) & 0x0000FF00) >> 8), \
+        (char) ( (val) & 0x000000FF)); \
 } while (0)
 
 /* only some message types have a data2 field */
@@ -348,7 +372,7 @@ static PmError Pmf_ReadMidiBignum(uint32_t *into, FILE *from, uint32_t *sz)
             more = 0;
         }
 
-        ret <<= 8;
+        ret <<= 7;
         ret += cur;
     }
 
@@ -357,4 +381,199 @@ static PmError Pmf_ReadMidiBignum(uint32_t *into, FILE *from, uint32_t *sz)
 }
 
 /* write out a MIDI file */
-PmError Pmf_WriteMidiFile(FILE *into, PmfFile *from) { BAD_DATA; }
+PmError Pmf_WriteMidiFile(FILE *into, PmfFile *from)
+{
+    PmError perr;
+    int i;
+
+    if ((perr = Pmf_WriteMidiHeader(into, from))) return perr;
+
+    for (i = 0; i < from->trackCt; i++) {
+        if ((perr = Pmf_WriteMidiTrack(into, from->tracks[i]))) return perr;
+    }
+
+    return pmNoError;
+}
+
+static PmError Pmf_WriteMidiHeader(FILE *into, PmfFile *from)
+{
+    /* magic and chunk size */
+    fwrite("MThd\0\0\0\x06", 1, 8, into);
+
+    /* and the rest */
+    MIDI_WRITE2(into, from->format);
+    MIDI_WRITE2(into, from->trackCt);
+    MIDI_WRITE2(into, from->timeDivision);
+
+    return pmNoError;
+}
+
+static PmError Pmf_WriteMidiTrack(FILE *into, PmfTrack *track)
+{
+    PmError perr;
+    PmfEvent *event;
+    uint8_t status;
+    uint32_t chunkSize;
+
+    /* track header */
+    fwrite("MTrk", 1, 4, into);
+
+    /* get the chunk size to be written */
+    chunkSize = 0;
+    event = track->head;
+    status = 0;
+    while (event) {
+        chunkSize += Pmf_GetMidiEventLength(event, &status);
+        event = event->next;
+    }
+    MIDI_WRITE4(into, chunkSize);
+
+    /* and write it */
+    event = track->head;
+    status = 0;
+    while (event) {
+        if ((perr = Pmf_WriteMidiEvent(into, event, &status))) return perr;
+        event = event->next;
+    }
+
+    return pmNoError;
+}
+
+static PmError Pmf_WriteMidiEvent(FILE *into, PmfEvent *event, uint8_t *pstatus)
+{
+    PmError perr;
+    uint8_t status, data1, data2;
+
+    /* write the delta time */
+    if ((perr = Pmf_WriteMidiBignum(into, event->deltaTm))) return perr;
+
+    /* get out the parts */
+    status = Pm_MessageStatus(event->e.message);
+    data1 = Pm_MessageData1(event->e.message);
+    data2 = Pm_MessageData2(event->e.message);
+
+    /* hopefully it's a simple event */
+    if (status < 0xF0) {
+        /* write the status if we need to */
+        if (status != *pstatus) {
+            MIDI_WRITE1(into, status);
+        }
+
+        /* then write data1 */
+        MIDI_WRITE1(into, data1);
+
+        /* not all have data2 (argh) */
+        if (TYPE_HAS_DATA2(status)) {
+            MIDI_WRITE1(into, data2);
+        }
+
+    } else if (event->meta) { /* has metadata */
+        PmfMeta *meta = event->meta;
+
+        MIDI_WRITE1(into, status);
+
+        /* meta type */
+        if (status == 0xFF) { /* actual meta */
+            MIDI_WRITE1(into, meta->type);
+        }
+
+        /* data length */
+        if ((perr = Pmf_WriteMidiBignum(into, meta->length))) return perr;
+
+        /* and the data itself */
+        fwrite(meta->data, 1, meta->length, into);
+
+    } else {
+        fprintf(stderr, "Unrecognized MIDI event type %02X!\n", status);
+        BAD_DATA;
+
+    }
+
+    *pstatus = status;
+    return pmNoError;
+}
+
+static uint32_t Pmf_GetMidiEventLength(PmfEvent *event, uint8_t *pstatus)
+{
+    uint32_t sz = 0;
+    uint8_t status;
+
+    /* delta time */
+    sz += Pmf_GetMidiBignumLength(event->deltaTm);
+
+    /* get out the parts */
+    status = Pm_MessageStatus(event->e.message);
+
+    if (status < 0xF0) {
+        /* write the status if we need to */
+        if (status != *pstatus) sz++;
+
+        /* then data1 */
+        sz++;
+
+        /* not all have data2 (argh) */
+        if (TYPE_HAS_DATA2(status)) sz++;
+
+    } else if (event->meta) { /* has metadata */
+        PmfMeta *meta = event->meta;
+
+        /* status */
+        sz++;
+
+        /* meta type */
+        if (status == 0xFF) sz++;
+
+        /* data length */
+        sz += Pmf_GetMidiBignumLength(meta->length);
+
+        /* and the data itself */
+        sz += meta->length;
+
+    } else {
+        fprintf(stderr, "Unrecognized MIDI event type %02X!\n", status);
+        BAD_DATA;
+
+    }
+
+    *pstatus = status;
+    return sz;
+}
+
+static PmError Pmf_WriteMidiBignum(FILE *into, uint32_t val)
+{
+    unsigned char buf[5];
+    int bufl, i;
+
+    /* write it into the buf first */
+    buf[0] = 0;
+    for (bufl = 0; val > 0; bufl++) {
+        buf[bufl] = (val & 0x7F);
+        val >>= 7;
+    }
+    if (bufl == 0) bufl = 1;
+
+    /* mark the high bits */
+    for (i = 1; i < bufl; i++) {
+        buf[i] |= 0x80;
+    }
+
+    /* then write it out */
+    for (i = bufl - 1; i >= 0; i--) {
+        MIDI_WRITE1(into, buf[i]);
+    }
+
+    return pmNoError;
+}
+
+static uint32_t Pmf_GetMidiBignumLength(uint32_t val)
+{
+    uint32_t sz = 1;
+    val >>= 7;
+
+    while (val > 0) {
+        sz++;
+        val >>= 7;
+    }
+
+    return sz;
+}

@@ -58,6 +58,14 @@ int main(int argc, char **argv)
 
     /* and read it */
     PSF(perr, Pmf_ReadMidiFile, (&pf, f));
+    fclose(f);
+
+    /* maybe write it out */
+    if (argc > 2) {
+        SF(f, fopen, NULL, (argv[2], "wb"));
+        PSF(perr, Pmf_WriteMidiFile, (f, pf));
+        fclose(f);
+    }
 
     for (ti = 0; ti < pf->trackCt; ti++) {
         printf("Track %d/%d\n", ti, pf->trackCt);
