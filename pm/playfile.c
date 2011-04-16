@@ -134,9 +134,6 @@ void dump(PtTimestamp timestamp, void *ignore)
                 Pmf_StreamSetTempoTick(stream, &ts, event->absoluteTm, tempo);
             }
         } else {
-            if (Pm_MessageType(ev.message) == 0xB) {
-                printf("CC: %d %d\n", Pm_MessageData1(ev.message), Pm_MessageData2(ev.message));
-            }
             Pm_WriteShort(ostream, 0, ev.message);
         }
     }
