@@ -6,7 +6,7 @@ LDFLAGS=$(ELDFLAGS)
 LIBS=-lportmidi -lporttime -lm
 ELDFLAGS=
 
-all: dumpfile dumpdev retempofile
+all: dumpfile dumpdev retempofile mergefiles
 
 midifile/libmidifile.a:
 	cd midifile ; $(MAKE)
@@ -20,9 +20,12 @@ dumpdev: dumpdev.o
 retempofile: retempofile.o midifile/libmidifile.a
 	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
 
+mergefiles: mergefiles.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o dumpfile dumpdev retempofile
+	rm -f *.o dumpfile dumpdev retempofile mergefiles
 	cd midifile ; $(MAKE) clean
