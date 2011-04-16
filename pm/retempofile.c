@@ -56,10 +56,12 @@
 #define Pm_MessageType(msg) (Pm_MessageStatus(msg)>>4)
 #define Pm_MessageChannel(msg) (Pm_MessageStatus(msg)&0xF)
 
-MfStream *stream = NULL;
+MfStream *ifstream = NULL;
 MfStream *tstream = NULL;
-PortMidiStream *istream = NULL;
-PortMidiStream *ostream = NULL;
+PortMidiStream *idstream = NULL;
+PortMidiStream *odstream = NULL;
+int ready = 0;
+char *tfile = NULL;
 
 void dump(PtTimestamp timestamp, void *ignore);
 
@@ -70,11 +72,11 @@ int main(int argc, char **argv)
     PtError pterr;
     MfFile *pf, *tf;
     int argi, i;
-    char *arg, *nextarg, *file;
+    char *arg, *nextarg, *ifile;
 
     PmDeviceID idev = -1, odev = -1;
     int list = 0;
-    file = NULL;
+    ifile = tfile = NULL;
 
     for (argi = 1; argi < argc; argi++) {
         arg = argv[argi];
@@ -92,8 +94,13 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Invalid invocation.\n");
                 exit(1);
             }
+        } else if (!ifile) {
+            ifile = arg;
+        } else if (!tfile) {
+            tfile = arg;
         } else {
-            file = arg;
+            fprintf(stderr, "Invalid invocation.\n");
+            exit(1);
         }
     }
 
@@ -122,24 +129,31 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    /* check files */
+    if (!ifile || !tfile) {
+        fprintf(stderr, "Need an input file and tempo output file.\n");
+        exit(1);
+    }
+
     /* open it for input/output */
-    PSF(perr, Pm_OpenInput, (&istream, idev, NULL, 1024, NULL, NULL));
-    PSF(perr, Pm_OpenOutput, (&ostream, odev, NULL, 1024, NULL, NULL, 0));
+    PSF(perr, Pm_OpenInput, (&idstream, idev, NULL, 1024, NULL, NULL));
+    PSF(perr, Pm_OpenOutput, (&odstream, odev, NULL, 1024, NULL, NULL, 0));
 
     /* open the file for input */
-    SF(f, fopen, NULL, (file, "rb"));
+    SF(f, fopen, NULL, (ifile, "rb"));
 
     /* and read it */
     PSF(perr, Mf_ReadMidiFile, (&pf, f));
     fclose(f);
 
     /* now start running */
-    stream = Mf_OpenStream(pf);
-    Mf_StartStream(stream, Pt_Time());
+    ifstream = Mf_OpenStream(pf);
+    Mf_StartStream(ifstream, Pt_Time());
 
     tf = Mf_NewFile(pf->timeDivision);
     tstream = Mf_OpenStream(tf);
-    Mf_StartStream(stream, Pt_Time());
+
+    ready = 1;
 
     while (1) Pt_Sleep(1<<30);
 
@@ -155,9 +169,9 @@ void dump(PtTimestamp timestamp, void *ignore)
     PtTimestamp ts;
     static uint32_t correctTempo = -1;
 
-    if (stream == NULL) return;
+    if (!ready) return;
 
-    while (Pm_Read(istream, &ev, 1) == 1) {
+    while (Pm_Read(idstream, &ev, 1) == 1) {
         if (Pm_MessageType(ev.message) == 0xB /* CC */ &&
             Pm_MessageData1(ev.message) == 13) {
             int cur = Pm_MessageData2(ev.message);
@@ -176,7 +190,7 @@ void dump(PtTimestamp timestamp, void *ignore)
                 newTempo = pow(2, power) * correctTempo;
                 if (newTempo <= 0) newTempo = 1;
                 printf("adj %d => %d\n", adjust, newTempo);
-                Mf_StreamSetTempoTimestamp(stream, &tick, ev.timestamp, newTempo);
+                Mf_StreamSetTempoTimestamp(ifstream, &tick, ev.timestamp, newTempo);
 
                 /* now box it up in an event */
                 event = Mf_NewEvent();
@@ -192,7 +206,7 @@ void dump(PtTimestamp timestamp, void *ignore)
         }
     }
 
-    while (Mf_StreamRead(stream, &event, &track, 1) == 1) {
+    while (Mf_StreamRead(ifstream, &event, &track, 1) == 1) {
         ev = event->e;
 
         if (event->meta) {
@@ -203,21 +217,21 @@ void dump(PtTimestamp timestamp, void *ignore)
                     (data[1] << 8) +
                      data[2];
                 correctTempo = tempo;
-                Mf_StreamSetTempoTick(stream, &ts, event->absoluteTm, tempo);
+                Mf_StreamSetTempoTick(ifstream, &ts, event->absoluteTm, tempo);
             }
         } else {
-            Pm_WriteShort(ostream, 0, ev.message);
+            Pm_WriteShort(odstream, 0, ev.message);
         }
 
         Mf_FreeEvent(event);
     }
 
-    if (Mf_StreamEmpty(stream) == TRUE) {
+    if (Mf_StreamEmpty(ifstream) == TRUE) {
         MfFile *of;
         FILE *ofh;
-        Mf_FreeFile(Mf_CloseStream(stream));
+        Mf_FreeFile(Mf_CloseStream(ifstream));
         of = Mf_CloseStream(tstream);
-        SF(ofh, fopen, NULL, ("tempo.mid", "wb"));
+        SF(ofh, fopen, NULL, (tfile, "wb"));
         Mf_WriteMidiFile(ofh, of);
         fclose(ofh);
         Mf_FreeFile(of);
