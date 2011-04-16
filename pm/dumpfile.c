@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include "helpers.h"
-#include "midi.h"
+#include "midifile/midi.h"
 #include "midifile/midifile.h"
 
 #define PCHECK(perr) do { \
@@ -111,17 +111,16 @@ void dump(MfEvent *event)
 
     type = Pm_MessageType(ev.message);
     switch (type) {
-        case MIDI_ON: printf("On: "); break;
-        case MIDI_OFF: printf("Off: "); break;
-        case MIDI_NAT: printf("Note aftertouch: "); break;
-        case MIDI_CC: printf("Controller: "); break;
-        case MIDI_PC: printf("Program: "); break;
-        case MIDI_CAT: printf("Channel aftertouch: "); break;
-        case MIDI_BEND: printf("Pitch bend: "); break;
-        case 0xF: printf("Meta/sysex: "); break;
+        case MIDI_NOTE_ON:              printf("On: "); break;
+        case MIDI_NOTE_OFF:             printf("Off: "); break;
+        case MIDI_NOTE_AFTERTOUCH:      printf("Note aftertouch: "); break;
+        case MIDI_CONTROLLER:           printf("Controller: "); break;
+        case MIDI_PROGRAM_CHANGE:       printf("Program: "); break;
+        case MIDI_CHANNEL_AFTERTOUCH:   printf("Channel aftertouch: "); break;
+        case MIDI_PITCH_BEND:           printf("Pitch bend: "); break;
+        case MIDI_META:                 printf("Meta/sysex: "); break;
 
-        default:
-            printf("??" "(%X): ", Pm_MessageType(ev.message));
+        default:                        printf("??" "(%X): ", Pm_MessageType(ev.message));
     }
     if (type < 0xF) {
         printf("ch%d %d %d\n", (int) Pm_MessageChannel(ev.message),

@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include "helpers.h"
-#include "midi.h"
+#include "midifile/midi.h"
 #include "portmidi.h"
 #include "porttime.h"
 
@@ -124,9 +124,7 @@ void dump(PtTimestamp ts, void *ignore)
     PmEvent ev;
     while (Pm_Read(stream, &ev, 1) > 0) {
         switch (Pm_MessageType(ev.message)) {
-            case MIDI_CC: /* control change */
-                printf("CC: ");
-                break;
+            case MIDI_CONTROLLER: printf("CC: "); break;
 
             default:
                 printf("??" "(%X): ", Pm_MessageType(ev.message));

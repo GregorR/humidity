@@ -25,7 +25,6 @@
 #include <string.h>
 
 #include "helpers.h"
-#include "midi.h"
 #include "midifile/midifile.h"
 #include "midifile/midifstream.h"
 
@@ -56,8 +55,6 @@
 #define Pm_MessageType(msg) (Pm_MessageStatus(msg)>>4)
 #define Pm_MessageChannel(msg) (Pm_MessageStatus(msg)&0xF)
 
-void dump(MfEvent *ev);
-
 #define MAX_SIMUL 1024
 
 int main(int argc, char **argv)
@@ -71,7 +68,7 @@ int main(int argc, char **argv)
     int tracks[MAX_SIMUL];
 
     if (argc < 4) {
-        fprintf(stderr, "Use: dumpfile <input file 1> <input file 2> <output file>\n");
+        fprintf(stderr, "Use: mergefiles <input file 1> <input file 2> <output file>\n");
         return 1;
     }
 
@@ -133,36 +130,4 @@ int main(int argc, char **argv)
     Mf_FreeFile(omf);
 
     return 0;
-}
-
-void dump(MfEvent *event)
-{
-    PmEvent ev = event->e;
-    uint8_t type;
-
-    printf("+%d (%d) ", event->deltaTm, event->absoluteTm);
-
-    type = Pm_MessageType(ev.message);
-    switch (type) {
-        case MIDI_ON: printf("On: "); break;
-        case MIDI_OFF: printf("Off: "); break;
-        case MIDI_NAT: printf("Note aftertouch: "); break;
-        case MIDI_CC: printf("Controller: "); break;
-        case MIDI_PC: printf("Program: "); break;
-        case MIDI_CAT: printf("Channel aftertouch: "); break;
-        case MIDI_BEND: printf("Pitch bend: "); break;
-        case 0xF: printf("Meta/sysex: "); break;
-
-        default:
-            printf("??" "(%X): ", Pm_MessageType(ev.message));
-    }
-    if (type < 0xF) {
-        printf("ch%d %d %d\n", (int) Pm_MessageChannel(ev.message),
-            (int) Pm_MessageData1(ev.message),
-            (int) Pm_MessageData2(ev.message));
-    } else if (event->meta) {
-        printf("%02X len=%d\n", (int) event->meta->type, (int) event->meta->length);
-    } else {
-        printf("???\n");
-    }
 }

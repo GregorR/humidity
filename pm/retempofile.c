@@ -26,7 +26,7 @@
 #include <string.h>
 
 #include "helpers.h"
-#include "midi.h"
+#include "midifile/midi.h"
 #include "midifile/midifstream.h"
 
 #define PCHECK(perr) do { \
@@ -213,9 +213,7 @@ void dump(PtTimestamp timestamp, void *ignore)
             if (event->meta->type == MIDI_M_TEMPO && event->meta->length == 3) {
                 /* send the tempo change back */
                 unsigned char *data = event->meta->data;
-                uint32_t tempo = (data[0] << 16) +
-                    (data[1] << 8) +
-                     data[2];
+                uint32_t tempo = MIDI_M_TEMPO_N(data);
                 correctTempo = tempo;
                 Mf_StreamSetTempoTick(ifstream, &ts, event->absoluteTm, tempo);
             }
