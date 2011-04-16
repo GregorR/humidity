@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "portmidistream.h"
+#include "portmidifstream.h"
 
 #include "portmidifile.h"
 #include "portmidifilealloc.h"

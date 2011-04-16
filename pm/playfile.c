@@ -4,7 +4,7 @@
 
 #include "helpers.h"
 #include "midi.h"
-#include "pmf/portmidistream.h"
+#include "pmf/portmidifstream.h"
 
 #define PCHECK(perr) do { \
     if (perr != pmNoError) { \

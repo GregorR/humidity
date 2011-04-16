@@ -1,5 +1,5 @@
-#ifndef PORTMIDISTREAM_H
-#define PORTMIDISTREAM_H
+#ifndef PORTMIDIFSTREAM_H
+#define PORTMIDIFSTREAM_H
 
 #include "portmidifile.h"
 #include "porttime.h"
