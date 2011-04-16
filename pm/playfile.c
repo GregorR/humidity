@@ -117,41 +117,13 @@ void dump(PtTimestamp timestamp, void *ignore)
 {
     PmfEvent *event;
     PmEvent ev;
-    uint8_t type;
 
     if (stream == NULL) return;
 
     while (Pmf_StreamRead(stream, &event, 1) == 1) {
         ev = event->e;
 
-        Pm_WriteShort(ostream, 0, ev.message);
-
-        /*printf("+%d (%d) ", event->deltaTm, event->absoluteTm);*/
-    
-        type = Pm_MessageType(ev.message);
-#if 0
-        switch (type) {
-            case MIDI_ON: printf("On: "); break;
-            case MIDI_OFF: printf("Off: "); break;
-            case MIDI_NAT: printf("Note aftertouch: "); break;
-            case MIDI_CC: printf("Controller: "); break;
-            case MIDI_PC: printf("Program: "); break;
-            case MIDI_CAT: printf("Channel aftertouch: "); break;
-            case MIDI_BEND: printf("Pitch bend: "); break;
-            case 0xF: printf("Meta/sysex: "); break;
-    
-            default:
-                printf("??" "(%X): ", Pm_MessageType(ev.message));
-        }
-        if (type < 0xF) {
-            printf("ch%d %d %d\n", (int) Pm_MessageChannel(ev.message),
-                (int) Pm_MessageData1(ev.message),
-                (int) Pm_MessageData2(ev.message));
-        } else
-#endif
         if (event->meta) {
-            /*printf("%02X len=%d\n", (int) event->meta->type, (int) event->meta->length);*/
-
             if (event->meta->type == MIDI_M_TEMPO && event->meta->length == 3) {
                 /* send the tempo change back */
                 PtTimestamp ts;
@@ -161,10 +133,11 @@ void dump(PtTimestamp timestamp, void *ignore)
                      data[2];
                 Pmf_StreamSetTempoTick(stream, &ts, event->absoluteTm, tempo);
             }
-#if 0
         } else {
-            printf("???\n");
-#endif
+            if (Pm_MessageType(ev.message) == 0xB) {
+                printf("CC: %d %d\n", Pm_MessageData1(ev.message), Pm_MessageData2(ev.message));
+            }
+            Pm_WriteShort(ostream, 0, ev.message);
         }
     }
 }
