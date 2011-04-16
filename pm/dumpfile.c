@@ -4,7 +4,7 @@
 
 #include "helpers.h"
 #include "midi.h"
-#include "pmf/portmidifile.h"
+#include "midifile/midifile.h"
 
 #define PCHECK(perr) do { \
     if (perr != pmNoError) { \
@@ -35,35 +35,35 @@
 
 PortMidiStream *stream;
 
-void dump(PmfEvent *ev);
+void dump(MfEvent *ev);
 
 int main(int argc, char **argv)
 {
     FILE *f;
     PmError perr;
-    PmfFile *pf;
+    MfFile *pf;
     int ti;
-    PmfTrack *track;
-    PmfEvent *cur;
+    MfTrack *track;
+    MfEvent *cur;
 
     if (argc < 2) {
         fprintf(stderr, "Use: dumpfile <file> [output file]\n");
         return 1;
     }
 
-    PSF(perr, Pmf_Initialize, ());
+    PSF(perr, Mf_Initialize, ());
 
     /* open it for input */
     SF(f, fopen, NULL, (argv[1], "rb"));
 
     /* and read it */
-    PSF(perr, Pmf_ReadMidiFile, (&pf, f));
+    PSF(perr, Mf_ReadMidiFile, (&pf, f));
     fclose(f);
 
     /* maybe write it out */
     if (argc > 2) {
         SF(f, fopen, NULL, (argv[2], "wb"));
-        PSF(perr, Pmf_WriteMidiFile, (f, pf));
+        PSF(perr, Mf_WriteMidiFile, (f, pf));
         fclose(f);
     }
 
@@ -80,7 +80,7 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void dump(PmfEvent *event)
+void dump(MfEvent *event)
 {
     PmEvent ev = event->e;
     uint8_t type;

@@ -6,23 +6,20 @@ LDFLAGS=$(ELDFLAGS)
 LIBS=-lportmidi -lporttime -lm
 ELDFLAGS=
 
-all: dumpfile playfile retempofile
+all: dumpfile retempofile
 
-pmf/libportmidifile.a:
-	cd pmf ; $(MAKE)
+midifile/libmidifile.a:
+	cd midifile ; $(MAKE)
 
-dumpfile: dumpfile.o pmf/libportmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< pmf/libportmidifile.a $(LIBS) -o $@
+dumpfile: dumpfile.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
 
-playfile: playfile.o pmf/libportmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< pmf/libportmidifile.a $(LIBS) -o $@
-
-retempofile: retempofile.o pmf/libportmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< pmf/libportmidifile.a $(LIBS) -o $@
+retempofile: retempofile.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o dumpfile playfile
-	cd pmf ; $(MAKE) clean
+	rm -f *.o dumpfile retempofile
+	cd midifile ; $(MAKE) clean

@@ -4,7 +4,7 @@
 
 #include "helpers.h"
 #include "midi.h"
-#include "pmf/portmidifstream.h"
+#include "midifile/midifstream.h"
 
 #define PCHECK(perr) do { \
     if (perr != pmNoError) { \
@@ -33,8 +33,8 @@
 #define Pm_MessageType(msg) (Pm_MessageStatus(msg)>>4)
 #define Pm_MessageChannel(msg) (Pm_MessageStatus(msg)&0xF)
 
-PmfStream *stream = NULL;
-PmfStream *ostream = NULL;
+MfStream *stream = NULL;
+MfStream *ostream = NULL;
 char *ofile = NULL;
 
 void dump(PtTimestamp timestamp, void *ignore);
@@ -44,14 +44,14 @@ int main(int argc, char **argv)
     FILE *f;
     PmError perr;
     PtError pterr;
-    PmfFile *pf, *pfo;
+    MfFile *pf, *pfo;
 
     if (argc < 3) {
         fprintf(stderr, "Use: streamcopyfile <in> <out>\n");
         return 1;
     }
 
-    PSF(perr, Pmf_Initialize, ());
+    PSF(perr, Mf_Initialize, ());
     PTSF(pterr, Pt_Start, (1, dump, NULL));
 
     /* open it for input */
@@ -59,17 +59,17 @@ int main(int argc, char **argv)
     ofile = argv[2];
 
     /* and read it */
-    PSF(perr, Pmf_ReadMidiFile, (&pf, f));
+    PSF(perr, Mf_ReadMidiFile, (&pf, f));
     fclose(f);
 
-    pfo = Pmf_AllocFile();
+    pfo = Mf_AllocFile();
     pfo->timeDivision = 480;
 
     /* now start running */
-    stream = Pmf_OpenStream(pf);
-    ostream = Pmf_OpenStream(pfo);
-    Pmf_StartStream(stream, Pt_Time());
-    Pmf_StartStream(ostream, Pt_Time());
+    stream = Mf_OpenStream(pf);
+    ostream = Mf_OpenStream(pfo);
+    Mf_StartStream(stream, Pt_Time());
+    Mf_StartStream(ostream, Pt_Time());
 
     while (1) Pt_Sleep(1<<30);
 
@@ -78,13 +78,13 @@ int main(int argc, char **argv)
 
 void dump(PtTimestamp timestamp, void *ignore)
 {
-    PmfEvent *event;
+    MfEvent *event;
     int track;
     PmEvent ev;
 
     if (stream == NULL || ostream == NULL) return;
 
-    while (Pmf_StreamRead(stream, &event, &track, 1) == 1) {
+    while (Mf_StreamRead(stream, &event, &track, 1) == 1) {
         ev = event->e;
 
         if (event->meta) {
@@ -96,23 +96,23 @@ void dump(PtTimestamp timestamp, void *ignore)
                     (data[1] << 8) +
                      data[2];
                 tempo /= 1000;
-                Pmf_StreamSetTempoTick(stream, &ts, event->absoluteTm, tempo);
+                Mf_StreamSetTempoTick(stream, &ts, event->absoluteTm, tempo);
             }
-            Pmf_FreeEvent(event);
+            Mf_FreeEvent(event);
         } else {
-            Pmf_StreamWriteOne(ostream, track, event);
+            Mf_StreamWriteOne(ostream, track, event);
         }
     }
 
-    if (Pmf_StreamEmpty(stream) == TRUE) {
-        PmfFile *of;
+    if (Mf_StreamEmpty(stream) == TRUE) {
+        MfFile *of;
         FILE *ofh;
-        Pmf_FreeFile(Pmf_CloseStream(stream));
-        of = Pmf_CloseStream(ostream);
+        Mf_FreeFile(Mf_CloseStream(stream));
+        of = Mf_CloseStream(ostream);
         SF(ofh, fopen, NULL, (ofile, "wb"));
-        Pmf_WriteMidiFile(ofh, of);
+        Mf_WriteMidiFile(ofh, of);
         fclose(ofh);
-        Pmf_FreeFile(of);
+        Mf_FreeFile(of);
         exit(0);
     }
 }
