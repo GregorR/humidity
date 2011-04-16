@@ -25,7 +25,7 @@
 #include <string.h>
 
 #include "helpers.h"
-#include "midi.h"
+#include "midifile/midi.h"
 #include "midifile/midifstream.h"
 
 #define PCHECK(perr) do { \
@@ -51,9 +51,6 @@
     perr = fun args; \
     PTCHECK(perr); \
 } while (0)
-
-#define Pm_MessageType(msg) (Pm_MessageStatus(msg)>>4)
-#define Pm_MessageChannel(msg) (Pm_MessageStatus(msg)&0xF)
 
 MfStream *stream = NULL;
 MfStream *ostream = NULL;

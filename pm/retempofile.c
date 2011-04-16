@@ -53,9 +53,6 @@
     PTCHECK(perr); \
 } while (0)
 
-#define Pm_MessageType(msg) (Pm_MessageStatus(msg)>>4)
-#define Pm_MessageChannel(msg) (Pm_MessageStatus(msg)&0xF)
-
 MfStream *ifstream = NULL;
 MfStream *tstream = NULL;
 PortMidiStream *idstream = NULL;
