@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "portmidifile.h"
+#include "portmidifilealloc.h"
 
 /* MISCELLANY HERE */
 
@@ -10,31 +11,6 @@ static const char *mallocStrerror()
 {
     return strerror(errno);
 }
-
-PmfAllocators Pmf_Allocators;
-#define AL Pmf_Allocators
-
-/* internal malloc-wrapper with error checking */
-static void *pmfMalloc(size_t sz)
-{
-    void *ret = AL.malloc(sz);
-    if (ret == NULL) {
-        fprintf(stderr, "Error while allocating memory: %s\n", AL.strerror());
-        exit(1);
-    }
-    return ret;
-}
-
-/* same for calloc */
-static void *pmfCalloc(size_t sz)
-{
-    void *ret = pmfMalloc(sz);
-    memset(ret, 0, sz);
-    return ret;
-}
-
-/* calloc of a type */
-#define pmfNew(tp) (pmfCalloc(sizeof(tp)))
 
 /* internal functions */
 static PmError Pmf_ReadMidiHeader(PmfFile **into, FILE *from);
@@ -109,7 +85,7 @@ PmError Pmf_Initialize()
 /* MIDI file */
 PmfFile *Pmf_AllocFile()
 {
-    return pmfNew(PmfFile);
+    return Pmf_New(PmfFile);
 }
 
 void Pmf_FreeFile(PmfFile *file)
@@ -125,7 +101,7 @@ void Pmf_FreeFile(PmfFile *file)
 /* track */
 PmfTrack *Pmf_AllocTrack()
 {
-    return pmfNew(PmfTrack);
+    return Pmf_New(PmfTrack);
 }
 
 void Pmf_FreeTrack(PmfTrack *track)
@@ -150,14 +126,14 @@ void Pmf_PushTrack(PmfFile *file, PmfTrack *track)
 {
     PmfTrack **newTracks;
     if (file->tracks) {
-        newTracks = pmfMalloc((file->trackCt + 1) * sizeof(PmfTrack *));
+        newTracks = Pmf_Malloc((file->trackCt + 1) * sizeof(PmfTrack *));
         memcpy(newTracks, file->tracks, file->trackCt * sizeof(PmfTrack *));
         newTracks[file->trackCt++] = track;
         fprintf(stderr, "Track count is now %d\n", (int) file->trackCt);
         AL.free(file->tracks);
         file->tracks = newTracks;
     } else {
-        file->tracks = pmfMalloc(sizeof(PmfTrack *));
+        file->tracks = Pmf_Malloc(sizeof(PmfTrack *));
         file->tracks[0] = track;
         file->trackCt = 1;
     }
@@ -166,20 +142,13 @@ void Pmf_PushTrack(PmfFile *file, PmfTrack *track)
 /* and event */
 PmfEvent *Pmf_AllocEvent()
 {
-    return pmfNew(PmfEvent);
+    return Pmf_New(PmfEvent);
 }
 
 void Pmf_FreeEvent(PmfEvent *event)
 {
     if (event->meta) Pmf_FreeMeta(event->meta);
     AL.free(event);
-}
-
-PmfEvent *Pmf_NewEvent(PmfTrack *track)
-{
-    PmfEvent *event = Pmf_AllocEvent();
-    Pmf_PushEvent(track, event);
-    return event;
 }
 
 void Pmf_PushEvent(PmfTrack *track, PmfEvent *event)
@@ -197,7 +166,7 @@ void Pmf_PushEvent(PmfTrack *track, PmfEvent *event)
 /* meta-events have extra fields */
 PmfMeta *Pmf_AllocMeta(uint32_t length)
 {
-    PmfMeta *ret = pmfCalloc(sizeof(PmfMeta) + length);
+    PmfMeta *ret = Pmf_Calloc(sizeof(PmfMeta) + length);
     ret->length = length;
     return ret;
 }

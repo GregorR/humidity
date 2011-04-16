@@ -13,15 +13,6 @@ typedef struct __PmfFile PmfFile;
 typedef struct __PmfTrack PmfTrack;
 typedef struct __PmfEvent PmfEvent;
 typedef struct __PmfMeta PmfMeta;
-typedef struct __PmfAllocators PmfAllocators;
-
-/* pluggable allocators */
-struct __PmfAllocators {
-    void *(*malloc)(size_t);
-    const char *(*strerror)();
-    void (*free)(void *);
-};
-extern PmfAllocators Pmf_Allocators;
 
 /* initialization */
 PmError Pmf_Initialize(void);
@@ -53,7 +44,6 @@ struct __PmfEvent {
 };
 PmfEvent *Pmf_AllocEvent(void);
 void Pmf_FreeEvent(PmfEvent *event);
-PmfEvent *Pmf_NewEvent(PmfTrack *track);
 void Pmf_PushEvent(PmfTrack *track, PmfEvent *event);
 
 /* meta-events have extra fields */

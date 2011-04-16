@@ -5,9 +5,11 @@ AR=ar
 ARFLAGS=rc
 RANLIB=ranlib
 
+PORTMIDIFILE_OS=portmidifile.o portmidifilealloc.o portmidistream.o
+
 all: libportmidifile.a
 
-libportmidifile.a: portmidifile.o
+libportmidifile.a: $(PORTMIDIFILE_OS)
 	$(AR) $(ARFLAGS) libportmidifile.a $<
 	$(RANLIB) libportmidifile.a
 
