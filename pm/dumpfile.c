@@ -47,7 +47,7 @@ int main(int argc, char **argv)
     PmfEvent *cur;
 
     if (argc < 2) {
-        fprintf(stderr, "Use: dumpfile <file>\n");
+        fprintf(stderr, "Use: dumpfile <file> [output file]\n");
         return 1;
     }
 
@@ -83,7 +83,12 @@ int main(int argc, char **argv)
 void dump(PmfEvent *event)
 {
     PmEvent ev = event->e;
-    switch (Pm_MessageType(ev.message)) {
+    uint8_t type;
+
+    printf("+%d (%d) ", event->deltaTm, event->absoluteTm);
+
+    type = Pm_MessageType(ev.message);
+    switch (type) {
         case MIDI_ON: printf("On: "); break;
         case MIDI_OFF: printf("Off: "); break;
         case MIDI_NAT: printf("Note aftertouch: "); break;
@@ -91,11 +96,18 @@ void dump(PmfEvent *event)
         case MIDI_PC: printf("Program: "); break;
         case MIDI_CAT: printf("Channel aftertouch: "); break;
         case MIDI_BEND: printf("Pitch bend: "); break;
+        case 0xF: printf("Meta/sysex: "); break;
 
         default:
             printf("??" "(%X): ", Pm_MessageType(ev.message));
     }
-    printf("ch%d %d %d\n", (int) Pm_MessageChannel(ev.message),
-        (int) Pm_MessageData1(ev.message),
-        (int) Pm_MessageData2(ev.message));
+    if (type < 0xF) {
+        printf("ch%d %d %d\n", (int) Pm_MessageChannel(ev.message),
+            (int) Pm_MessageData1(ev.message),
+            (int) Pm_MessageData2(ev.message));
+    } else if (event->meta) {
+        printf("%02X len=%d\n", (int) event->meta->type, (int) event->meta->length);
+    } else {
+        printf("???\n");
+    }
 }
