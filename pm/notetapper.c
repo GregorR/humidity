@@ -307,6 +307,8 @@ void dump(PtTimestamp timestamp, void *ignore)
 int peek(MfStream *stream, MfEvent **events, int *tracks, int32_t length, uint32_t *timeNext)
 {
     int rd, i, pbi, foundNote;
+    uint32_t max = (uint32_t) -1;
+    uint32_t cur;
     MfEvent **evPutBack;
     int *tPutBack;
 
@@ -318,22 +320,31 @@ int peek(MfStream *stream, MfEvent **events, int *tracks, int32_t length, uint32
     /* then pull them out, pulse by pulse */
     foundNote = 0;
     for (i = 0; i < length && !foundNote && !Mf_StreamEmpty(stream);) {
-        *timeNext = Mf_StreamNext(stream);
-        while (i < length && Mf_StreamReadUntil(stream, events + i, tracks + i, 1, *timeNext) == 1) {
+        cur = Mf_StreamNext(stream);
+        if (cur > max) break;
+        while (i < length && Mf_StreamReadUntil(stream, events + i, tracks + i, 1, cur) == 1) {
             uint8_t type = Pm_MessageType(events[i]->e.message);
             if (type == MIDI_NOTE_ON || type == MIDI_NOTE_OFF) {
                 /* don't read this one */
-                if (type == MIDI_NOTE_ON) foundNote = 1;
+                if (type == MIDI_NOTE_ON) {
+                    if (cur < max) max = cur;
+                    foundNote = 1;
+                }
                 evPutBack[pbi] = events[i];
                 tPutBack[pbi] = tracks[i];
                 pbi++;
+                if (pbi >= length) {
+                    /* ACK! Escape! */
+                    foundNote = 1;
+                    break;
+                }
             } else {
                 i++;
             }
         }
     }
     rd = i;
-    if (rd == length) *timeNext = (uint32_t) -1;
+    *timeNext = max;
 
     /* put back the ones that should be put back */
     for (i = pbi - 1; i >= 0; i--) {
