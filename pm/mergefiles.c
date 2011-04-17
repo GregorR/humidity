@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "helpers.h"
+#include "midifile/midi.h"
 #include "midifile/midifile.h"
 #include "midifile/midifstream.h"
 
@@ -53,6 +54,8 @@
 } while (0)
 
 #define MAX_SIMUL 1024
+
+void merge(MfEvent **events, int *tracks, int sz);
 
 int main(int argc, char **argv)
 {
@@ -104,10 +107,17 @@ int main(int argc, char **argv)
         rd = Mf_StreamReadUntil(ims1, events, tracks, MAX_SIMUL, t);
         rd += Mf_StreamReadUntil(ims2, events + rd, tracks + rd, MAX_SIMUL - rd, t);
 
+        /* merge them */
+        merge(events, tracks, rd);
+
         /* then write them all out */
         for (i = 0; i < rd; i++) {
             /* don't write out track-end events, we'll add these ourselves */
-            if (events[i]->meta && events[i]->meta->type == 0x2F) continue;
+            if (!events[i]) continue;
+            if (events[i]->meta && events[i]->meta->type == 0x2F) {
+                Mf_FreeEvent(events[i]);
+                continue;
+            }
             events[i]->deltaTm = events[i]->e.timestamp = 0;
             PSF(perr, Mf_StreamWriteOne, (oms, tracks[i], events[i]));
         }
@@ -127,4 +137,31 @@ int main(int argc, char **argv)
     Mf_FreeFile(omf);
 
     return 0;
+}
+
+void merge(MfEvent **events, int *tracks, int sz)
+{
+    int i, j;
+    uint8_t type1, type2, data11, data12;
+
+    for (i = 0; i < sz; i++) {
+        if (!events[i]) continue;
+        type1 = Pm_MessageType(events[i]->e.message);
+        data11 = Pm_MessageType(events[i]->e.message);
+
+        for (j = i + 1; j < sz; j++) {
+            if (!events[j]) continue;
+            type2 = Pm_MessageType(events[j]->e.message);
+            data12 = Pm_MessageType(events[j]->e.message);
+
+            if (type1 == type2 && data11 == data12) {
+                /* merge NOTE_ON events */
+                if (type1 == MIDI_NOTE_ON) {
+                    events[i]->e.message = events[j]->e.message;
+                    Mf_FreeEvent(events[j]);
+                    events[j] = NULL;
+                }
+            }
+        }
+    }
 }
