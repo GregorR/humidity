@@ -209,15 +209,16 @@ void dump(PtTimestamp timestamp, void *ignore)
     while (Pm_Read(idstream, &ev, 1) == 1) {
         /* take a nonzero controller event or a note on as a note */
         uint8_t type = Pm_MessageType(ev.message);
-        if (type == MIDI_NOTE_ON) {
+        if (type == MIDI_NOTE_ON && Pm_MessageData2(ev.message) > 0) {
             /* got a tick */
             uint8_t velocity = Pm_MessageData2(ev.message);
             uint32_t lastTick = curTick;
-            curTick = nextTick;
 
             /* some keyboards (read: mine) seem to think it's funny to send
              * note on events with velocity 0 instead of note off events */
             if (velocity == 0) continue;
+
+            curTick = nextTick;
 
             /* figure out when the next one is */
             while (Mf_StreamReadUntil(ifstream, &event, &track, 1, curTick) == 1) {
@@ -255,7 +256,6 @@ void dump(PtTimestamp timestamp, void *ignore)
             if (curTick != lastTick) {
                 PtTimestamp diff = ts - lastTs;
                 uint32_t tempo = (diff * 1000) * timeDivision / (curTick - lastTick);
-                lastTs = ts;
                 if (tempo > 0) {
                     MfMeta *meta;
                     Mf_StreamSetTempo(ifstream, ts, 0, curTick, tempo);
@@ -272,6 +272,7 @@ void dump(PtTimestamp timestamp, void *ignore)
                     Mf_StreamWriteOne(tstream, 0, event);
                 }
             }
+            lastTs = ts;
 
         } else if (type != MIDI_NOTE_OFF) {
             /* send all other non-meta input events directly, as well as recording them */
@@ -345,6 +346,16 @@ int peek(MfStream *stream, MfEvent **events, int *tracks, int32_t length, uint32
     }
     rd = i;
     *timeNext = max;
+
+    /* if we didn't find a note, then give them the OFF events */
+    if (!foundNote) {
+        for (i = 0; i < pbi; i++) {
+            events[i] = evPutBack[i];
+            tracks[i] = tPutBack[i];
+        }
+        rd = pbi;
+        pbi = 0;
+    }
 
     /* put back the ones that should be put back */
     for (i = pbi - 1; i >= 0; i--) {

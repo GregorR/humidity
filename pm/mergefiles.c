@@ -147,12 +147,12 @@ void merge(MfEvent **events, int *tracks, int sz)
     for (i = 0; i < sz; i++) {
         if (!events[i]) continue;
         type1 = Pm_MessageType(events[i]->e.message);
-        data11 = Pm_MessageType(events[i]->e.message);
+        data11 = Pm_MessageData1(events[i]->e.message);
 
         for (j = i + 1; j < sz; j++) {
             if (!events[j]) continue;
             type2 = Pm_MessageType(events[j]->e.message);
-            data12 = Pm_MessageType(events[j]->e.message);
+            data12 = Pm_MessageData1(events[j]->e.message);
 
             if (type1 == type2 && data11 == data12) {
                 /* merge NOTE_ON events */
