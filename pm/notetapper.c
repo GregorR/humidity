@@ -267,10 +267,14 @@ void dump(PtTimestamp timestamp, void *ignore)
             }
 
         } else {
-            /* send all other non-meta input events directly */
-            if (Pm_MessageType(ev.message) != MIDI_META)
+            /* send all other non-meta input events directly, as well as recording them */
+            if (Pm_MessageType(ev.message) != MIDI_META) {
+                event = Mf_NewEvent();
+                event->absoluteTm = curTick;
+                event->e.message = ev.message;
+                Mf_StreamWriteOne(tstream, 1, event);
                 Pm_WriteShort(odstream, 0, ev.message);
-
+            }
         }
     }
 
