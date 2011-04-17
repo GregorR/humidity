@@ -56,11 +56,12 @@
 #define METRO_PER_QN 24
 
 /* input file stream */
-MfStream *stream = NULL;
+MfStream *ifstream = NULL;
+MfStream *tstream = NULL;
 
 /* input and output device streams */
-PortMidiStream *istream = NULL;
-PortMidiStream *ostream = NULL;
+PortMidiStream *idstream = NULL;
+PortMidiStream *odstream = NULL;
 
 int ready = 0;
 
@@ -80,7 +81,7 @@ int main(int argc, char **argv)
     FILE *f;
     PmError perr;
     PtError pterr;
-    MfFile *pf;
+    MfFile *pf, *tf;
     int argi, i;
     char *arg, *nextarg, *ifile;
 
@@ -146,8 +147,8 @@ int main(int argc, char **argv)
     }
 
     /* open it for input/output */
-    PSF(perr, Pm_OpenInput, (&istream, idev, NULL, 1024, NULL, NULL));
-    PSF(perr, Pm_OpenOutput, (&ostream, odev, NULL, 1024, NULL, NULL, 0));
+    PSF(perr, Pm_OpenInput, (&idstream, idev, NULL, 1024, NULL, NULL));
+    PSF(perr, Pm_OpenOutput, (&odstream, odev, NULL, 1024, NULL, NULL, 0));
 
     /* open the file for input */
     SF(f, fopen, NULL, (ifile, "rb"));
@@ -158,8 +159,11 @@ int main(int argc, char **argv)
     timeDivision = pf->timeDivision;
 
     /* now start running */
-    stream = Mf_OpenStream(pf);
-    Mf_StartStream(stream, Pt_Time());
+    ifstream = Mf_OpenStream(pf);
+    Mf_StartStream(ifstream, Pt_Time());
+
+    tf = Mf_NewFile(pf->timeDivision);
+    tstream = Mf_OpenStream(tf);
 
     ready = 1;
 
@@ -180,7 +184,7 @@ void dump(PtTimestamp timestamp, void *ignore)
 
     ts = Pt_Time();
 
-    while (Pm_Read(istream, &ev, 1) == 1) {
+    while (Pm_Read(idstream, &ev, 1) == 1) {
         /* take a nonzero controller event or a note on as a tick */
         if ((Pm_MessageType(ev.message) == MIDI_CONTROLLER &&
             Pm_MessageData2(ev.message) > 0) ||
@@ -189,9 +193,10 @@ void dump(PtTimestamp timestamp, void *ignore)
                 /* OK, this is the very first tick. Just initialize */
                 nextTick = timeDivision * METRO_PER_QN / metronome;
                 curTick = 0;
-                Mf_StreamSetTempo(stream, ts, 0, 0, Mf_StreamGetTempo(stream));
+                Mf_StreamSetTempo(ifstream, ts, 0, 0, Mf_StreamGetTempo(ifstream));
             } else {
                 /* got a tick */
+                uint32_t lastTick = curTick;
                 curTick = nextTick;
                 nextTick += timeDivision * METRO_PER_QN / metronome;
 
@@ -200,8 +205,21 @@ void dump(PtTimestamp timestamp, void *ignore)
                     PtTimestamp diff = ts - lastTs;
                     uint32_t tempo = (diff * 1000) * metronome / METRO_PER_QN;
                     lastTs = ts;
-                    if (tempo > 0)
-                        Mf_StreamSetTempo(stream, ts, 0, curTick, tempo);
+                    if (tempo > 0) {
+                        MfMeta *meta;
+                        Mf_StreamSetTempo(ifstream, ts, 0, curTick, tempo);
+
+                        /* produce the tempo event */
+                        event = Mf_NewEvent();
+                        event->absoluteTm = lastTick;
+                        event->e.message = Pm_Message(MIDI_STATUS_META, 0, 0);
+                        event->meta = meta = Mf_NewMeta(3);
+                        meta->type = MIDI_M_TEMPO;
+                        meta->data[0] = (tempo >> 16) & 0xFF;
+                        meta->data[1] = (tempo >> 8) & 0xFF;
+                        meta->data[2] = tempo & 0xFF;
+                        Mf_StreamWriteOne(tstream, 0, event);
+                    }
                 }
             }
         }
@@ -211,10 +229,10 @@ void dump(PtTimestamp timestamp, void *ignore)
     if (nextTick < 0) return;
 
     /* figure out when to read to */
-    tmTick = Mf_StreamGetTick(stream, ts);
+    tmTick = Mf_StreamGetTick(ifstream, ts);
     if (tmTick >= nextTick) tmTick = nextTick - 1;
 
-    while (Mf_StreamReadUntil(stream, &event, &track, 1, tmTick) == 1) {
+    while (Mf_StreamReadUntil(ifstream, &event, &track, 1, tmTick) == 1) {
         ev = event->e;
 
         if (event->meta) {
@@ -225,21 +243,21 @@ void dump(PtTimestamp timestamp, void *ignore)
                 nextTick = curTick + timeDivision * METRO_PER_QN / metronome;
             }
         } else {
-            Pm_WriteShort(ostream, 0, ev.message);
+            Pm_WriteShort(odstream, 0, ev.message);
         }
 
         Mf_FreeEvent(event);
     }
 
-    if (Mf_StreamEmpty(stream) == TRUE) {
-        /*MfFile *of;
-        FILE *ofh;*/
-        Mf_FreeFile(Mf_CloseStream(stream));
-        /*of = Mf_CloseStream(tstream);
+    if (Mf_StreamEmpty(ifstream) == TRUE) {
+        MfFile *of;
+        FILE *ofh;
+        Mf_FreeFile(Mf_CloseStream(ifstream));
+        of = Mf_CloseStream(tstream);
         SF(ofh, fopen, NULL, (tfile, "wb"));
         Mf_WriteMidiFile(ofh, of);
         fclose(ofh);
-        Mf_FreeFile(of);*/
+        Mf_FreeFile(of);
         Pm_Terminate();
         exit(0);
     }
