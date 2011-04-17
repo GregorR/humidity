@@ -164,12 +164,16 @@ int main(int argc, char **argv)
     fclose(f);
     timeDivision = pf->timeDivision;
 
+    /* make a tempo file with the right number of tracks */
+    tf = Mf_NewFile(pf->timeDivision);
+    while (tf->tracks < pf->tracks) {
+        Mf_NewTrack(tf);
+    }
+    tstream = Mf_OpenStream(tf);
+
     /* now start running */
     ifstream = Mf_OpenStream(pf);
     Mf_StartStream(ifstream, Pt_Time());
-
-    tf = Mf_NewFile(pf->timeDivision);
-    tstream = Mf_OpenStream(tf);
 
     /* peek for first events */
     do {
@@ -204,13 +208,16 @@ void dump(PtTimestamp timestamp, void *ignore)
 
     while (Pm_Read(idstream, &ev, 1) == 1) {
         /* take a nonzero controller event or a note on as a note */
-        if ((Pm_MessageType(ev.message) == MIDI_CONTROLLER &&
-            Pm_MessageData2(ev.message) > 0) ||
-            (Pm_MessageType(ev.message) == MIDI_NOTE_ON)) {
+        uint8_t type = Pm_MessageType(ev.message);
+        if (type == MIDI_NOTE_ON) {
             /* got a tick */
             uint8_t velocity = Pm_MessageData2(ev.message);
             uint32_t lastTick = curTick;
             curTick = nextTick;
+
+            /* some keyboards (read: mine) seem to think it's funny to send
+             * note on events with velocity 0 instead of note off events */
+            if (velocity == 0) continue;
 
             /* figure out when the next one is */
             while (Mf_StreamReadUntil(ifstream, &event, &track, 1, curTick) == 1) {
@@ -242,7 +249,7 @@ void dump(PtTimestamp timestamp, void *ignore)
                     }
                     Mf_FreeEvent(events[i]);
                 }
-            } while (nextTick == (uint32_t) -1);
+            } while (!Mf_StreamEmpty(ifstream) && nextTick == (uint32_t) -1);
 
             /* calculate the tempo by the diff */
             if (curTick != lastTick) {
@@ -266,14 +273,19 @@ void dump(PtTimestamp timestamp, void *ignore)
                 }
             }
 
-        } else {
+        } else if (type != MIDI_NOTE_OFF) {
             /* send all other non-meta input events directly, as well as recording them */
             if (Pm_MessageType(ev.message) != MIDI_META) {
-                event = Mf_NewEvent();
-                event->absoluteTm = curTick;
-                event->e.message = ev.message;
-                Mf_StreamWriteOne(tstream, 1, event);
-                Pm_WriteShort(odstream, 0, ev.message);
+                for (i = 1; i < tstream->file->trackCt; i++) {
+                    event = Mf_NewEvent();
+                    event->absoluteTm = curTick;
+                    event->e.message = Pm_Message(
+                        (type<<4)|(i-1),
+                        Pm_MessageData1(ev.message),
+                        Pm_MessageData2(ev.message));
+                    Pm_WriteShort(odstream, 0, event->e.message);
+                    Mf_StreamWriteOne(tstream, i, event);
+                }
             }
         }
     }
@@ -305,7 +317,7 @@ int peek(MfStream *stream, MfEvent **events, int *tracks, int32_t length, uint32
 
     /* then pull them out, pulse by pulse */
     foundNote = 0;
-    for (i = 0; i < length && !foundNote;) {
+    for (i = 0; i < length && !foundNote && !Mf_StreamEmpty(stream);) {
         *timeNext = Mf_StreamNext(stream);
         while (i < length && Mf_StreamReadUntil(stream, events + i, tracks + i, 1, *timeNext) == 1) {
             uint8_t type = Pm_MessageType(events[i]->e.message);
