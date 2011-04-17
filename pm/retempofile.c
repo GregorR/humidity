@@ -144,11 +144,11 @@ int main(int argc, char **argv)
     fclose(f);
 
     /* now start running */
-    ifstream = Mf_OpenStream(pf);
-    Mf_StartStream(ifstream, Pt_Time());
-
     tf = Mf_NewFile(pf->timeDivision);
     tstream = Mf_OpenStream(tf);
+
+    ifstream = Mf_OpenStream(pf);
+    Mf_StartStream(ifstream, Pt_Time());
 
     ready = 1;
 
