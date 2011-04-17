@@ -186,7 +186,7 @@ void dump(PtTimestamp timestamp, void *ignore)
     while (Pm_Read(idstream, &ev, 1) == 1) {
         /* take a nonzero controller event or a note on as a note */
         uint8_t type = Pm_MessageType(ev.message);
-        if (type == MIDI_NOTE_ON && Pm_MessageData2(ev.message) > 0) {
+        if (type == MIDI_NOTE_ON) {
             /* got a tick */
             uint8_t velocity = Pm_MessageData2(ev.message);
             uint32_t lastTick = curTick;
