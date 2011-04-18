@@ -28,30 +28,7 @@
 #include "midifile/midi.h"
 #include "portmidi.h"
 #include "porttime.h"
-
-#define PCHECK(perr) do { \
-    if (perr != pmNoError) { \
-        fprintf(stderr, "%s\n", Pm_GetErrorText(perr)); \
-        exit(1); \
-    } \
-} while (0)
-
-#define PSF(perr, fun, args) do { \
-    perr = fun args; \
-    PCHECK(perr); \
-} while (0)
-
-#define PTCHECK(perr) do { \
-    if (perr != ptNoError) { \
-        fprintf(stderr, "PortTime error %d\n", (int) perr); \
-        exit(1); \
-    } \
-} while (0)
-
-#define PTSF(perr, fun, args) do { \
-    perr = fun args; \
-    PTCHECK(perr); \
-} while (0)
+#include "pmhelpers.h"
 
 PortMidiStream *stream;
 
