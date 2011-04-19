@@ -172,6 +172,7 @@ void dump(PtTimestamp timestamp, void *ignore)
                 /* OK, this is the very first tick. Just initialize */
                 nextTick = timeDivision * metronome / METRO_PER_QN;
                 curTick = 0;
+                lastTs = ts;
                 Mf_StreamSetTempo(ifstream, ts, 0, 0, Mf_StreamGetTempo(ifstream));
             } else {
                 /* got a tick */
