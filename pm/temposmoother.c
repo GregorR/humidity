@@ -84,7 +84,7 @@ int main(int argc, char **argv)
                     meta->data[0] = (sTempo >> 16) & 0xFF;
                     meta->data[1] = (sTempo >> 8) & 0xFF;
                     meta->data[2] = sTempo & 0xFF;
-                    Mf_StreamWriteOne(oms, 0, sEvent);
+                    Mf_StreamWriteOne(oms, track, sEvent);
                 }
             }
 
@@ -93,6 +93,14 @@ int main(int argc, char **argv)
 
             event->deltaTm = event->e.timestamp = 0;
             Mf_StreamWriteOne(oms, 0, event);
+
+        } else if (!event->meta) {
+            /* just write it out (best not be on the tempo track! */
+            sEvent = Mf_NewEvent();
+            sEvent->absoluteTm = event->absoluteTm;
+            sEvent->e.message = event->e.message;
+            Mf_StreamWriteOne(oms, track, sEvent);
+
         }
     }
 
