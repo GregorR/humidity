@@ -156,6 +156,7 @@ void dump(PtTimestamp timestamp, void *ignore)
     PmEvent ev;
     PtTimestamp ts;
     uint32_t tmTick;
+    static uint8_t velocity = 128;
 
     if (!ready) return;
 
@@ -163,24 +164,25 @@ void dump(PtTimestamp timestamp, void *ignore)
 
     while (Pm_Read(idstream, &ev, 1) == 1) {
         /* take a nonzero controller event or a note on as a tick */
-        if ((Pm_MessageType(ev.message) == MIDI_CONTROLLER &&
-            Pm_MessageData2(ev.message) > 0) ||
-            (Pm_MessageType(ev.message) == MIDI_NOTE_ON)) {
+        uint8_t type = Pm_MessageType(ev.message);
+        if ((type == MIDI_CONTROLLER || type == MIDI_NOTE_ON) &&
+            Pm_MessageData2(ev.message) > 0) {
+            velocity = Pm_MessageData2(ev.message);
             if (curTick < 0) {
                 /* OK, this is the very first tick. Just initialize */
-                nextTick = timeDivision * METRO_PER_QN / metronome;
+                nextTick = timeDivision * metronome / METRO_PER_QN;
                 curTick = 0;
                 Mf_StreamSetTempo(ifstream, ts, 0, 0, Mf_StreamGetTempo(ifstream));
             } else {
                 /* got a tick */
                 uint32_t lastTick = curTick;
                 curTick = nextTick;
-                nextTick += timeDivision * METRO_PER_QN / metronome;
+                nextTick += timeDivision * metronome / METRO_PER_QN;
 
                 /* calculate the tempo by the diff */
                 {
                     PtTimestamp diff = ts - lastTs;
-                    uint32_t tempo = (diff * 1000) * metronome / METRO_PER_QN;
+                    uint32_t tempo = (diff * 1000) * METRO_PER_QN / metronome;
                     lastTs = ts;
                     if (tempo > 0) {
                         MfMeta *meta;
@@ -217,9 +219,24 @@ void dump(PtTimestamp timestamp, void *ignore)
             if (event->meta->type == MIDI_M_TIME_SIGNATURE &&
                 event->meta->length == MIDI_M_TIME_SIGNATURE_LENGTH) {
                 metronome = MIDI_M_TIME_SIGNATURE_METRONOME(event->meta->data);
-                nextTick = curTick + timeDivision * METRO_PER_QN / metronome;
+                nextTick = curTick + timeDivision * metronome / METRO_PER_QN;
             }
         } else {
+            if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
+                MfEvent *newevent;
+
+                /* change the velocity */
+                ev.message = Pm_Message(
+                    Pm_MessageStatus(ev.message),
+                    Pm_MessageData1(ev.message),
+                    velocity);
+
+                /* and write it to our output */
+                newevent = Mf_NewEvent();
+                newevent->absoluteTm = event->absoluteTm;
+                newevent->e.message = ev.message;
+                Mf_StreamWriteOne(tstream, track, newevent);
+            }
             Pm_WriteShort(odstream, 0, ev.message);
         }
 
