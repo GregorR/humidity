@@ -194,7 +194,7 @@ void handleController(PtTimestamp ts, uint8_t cnum, uint8_t val)
 
     if (cont.ranged) {
         velocity = 64 + val/2;
-    } else {
+    } else if (val > 0) {
         handleBeat(ts);
     }
 }
@@ -257,13 +257,11 @@ void handler(PtTimestamp timestamp, void *ignore)
         uint8_t type = Pm_MessageType(ev.message);
         uint8_t dat1 = Pm_MessageData1(ev.message);
         uint8_t dat2 = Pm_MessageData2(ev.message);
-        if (dat2 > 0) {
-            if (type == MIDI_NOTE_ON) {
-                velocity = Pm_MessageData2(ev.message);
-                handleBeat(ts);
-            } else if (type == MIDI_CONTROLLER) {
-                handleController(ts, dat1, dat2);
-            }
+        if (type == MIDI_NOTE_ON && dat2 > 0) {
+            velocity = Pm_MessageData2(ev.message);
+            handleBeat(ts);
+        } else if (type == MIDI_CONTROLLER) {
+            handleController(ts, dat1, dat2);
         }
     }
 
@@ -288,11 +286,13 @@ void handler(PtTimestamp timestamp, void *ignore)
             if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
                 MfEvent *newevent;
 
-                /* change the velocity */
-                ev.message = Pm_Message(
-                    Pm_MessageStatus(ev.message),
-                    Pm_MessageData1(ev.message),
-                    velocity);
+                if (Pm_MessageData2(ev.message) != 0) {
+                    /* change the velocity */
+                    ev.message = Pm_Message(
+                        Pm_MessageStatus(ev.message),
+                        Pm_MessageData1(ev.message),
+                        velocity);
+                }
 
                 /* and write it to our output */
                 newevent = Mf_NewEvent();
