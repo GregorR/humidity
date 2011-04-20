@@ -39,7 +39,6 @@ int main(int argc, char **argv)
     int ti;
     MfTrack *track;
     MfEvent *cur;
-    int redux;
 
     if (argc < 3) {
         fprintf(stderr, "Use: timesigfixer <file> <output file>\n");
@@ -82,16 +81,22 @@ int main(int argc, char **argv)
 
 #define DENOM_TICKS (96>>denom)
 
-/* figure out a metronome value for the given time signature */
+/* figure out a metronome value for the given time signature
+ * for no good reason, this has some support for numerators up to 20 */
 uint8_t metro(uint8_t numer, uint8_t denom)
 {
     switch (numer) {
+        case 0:
+        case 1:
         case 2:
         case 3:
         case 4: /* common time and friends */
         case 5:
         case 7:
         case 11:
+        case 13:
+        case 17:
+        case 19:
             return DENOM_TICKS;
 
         case 10:
@@ -99,8 +104,24 @@ uint8_t metro(uint8_t numer, uint8_t denom)
 
         case 6:
         case 9:
+        case 12:
             return DENOM_TICKS * 3;
 
         case 8:
+        case 16:
             return DENOM_TICKS * 4;
+
+        case 15:
+        case 20:
+            return DENOM_TICKS * 5;
+
+        case 18:
+            return DENOM_TICKS * 6;
+
+        case 14:
+            return DENOM_TICKS * 7;
+
+        default:
+            return metro(numer/2, (denom>0)?(denom-1):0);
+    }
 }
