@@ -29,6 +29,8 @@
 #include "midifile/midifile.h"
 #include "pmhelpers.h"
 
+uint8_t metro(uint8_t numer, uint8_t denom);
+
 int main(int argc, char **argv)
 {
     FILE *f;
@@ -39,11 +41,10 @@ int main(int argc, char **argv)
     MfEvent *cur;
     int redux;
 
-    if (argc < 4) {
-        fprintf(stderr, "Use: chgvel <file> <output file> <range reduction>\n");
+    if (argc < 3) {
+        fprintf(stderr, "Use: timesigfixer <file> <output file>\n");
         return 1;
     }
-    redux = atoi(argv[3]);
 
     PSF(perr, Mf_Initialize, ());
 
@@ -59,13 +60,13 @@ int main(int argc, char **argv)
         track = pf->tracks[ti];
         cur = track->head;
         while (cur) {
-            if (Pm_MessageType(cur->e.message) == MIDI_NOTE_ON) {
-                uint8_t vel = Pm_MessageData2(cur->e.message);
-                vel = 127 - (127-vel)/redux;
-                cur->e.message = Pm_Message(
-                    Pm_MessageStatus(cur->e.message),
-                    Pm_MessageData1(cur->e.message),
-                    vel);
+            if (cur->meta && cur->meta->type == MIDI_M_TIME_SIGNATURE &&
+                cur->meta->length == MIDI_M_TIME_SIGNATURE_LENGTH) {
+                /* fix this time signature */
+                uint8_t numer = MIDI_M_TIME_SIGNATURE_NUMERATOR(cur->meta->data);
+                uint8_t denom = MIDI_M_TIME_SIGNATURE_DENOMINATOR(cur->meta->data);
+                MIDI_M_TIME_SIGNATURE_METRONOME(cur->meta->data) =
+                    metro(numer, denom);
             }
             cur = cur->next;
         }
@@ -77,4 +78,29 @@ int main(int argc, char **argv)
     fclose(f);
 
     return 0;
+}
+
+#define DENOM_TICKS (96>>denom)
+
+/* figure out a metronome value for the given time signature */
+uint8_t metro(uint8_t numer, uint8_t denom)
+{
+    switch (numer) {
+        case 2:
+        case 3:
+        case 4: /* common time and friends */
+        case 5:
+        case 7:
+        case 11:
+            return DENOM_TICKS;
+
+        case 10:
+            return DENOM_TICKS * 2;
+
+        case 6:
+        case 9:
+            return DENOM_TICKS * 3;
+
+        case 8:
+            return DENOM_TICKS * 4;
 }
