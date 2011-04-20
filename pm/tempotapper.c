@@ -51,7 +51,20 @@ uint8_t metronome = METRO_PER_QN;
 int32_t curTick = -1, nextTick = -1;
 PtTimestamp lastTs = 0;
 
-void dump(PtTimestamp timestamp, void *ignore);
+/* and velocity */
+uint8_t velocity = 100;
+
+/* controller info */
+struct Controller {
+    uint8_t seen, ranged, baseval, lastval;
+};
+struct Controller controllers[128];
+
+/* functions */
+void usage();
+void handler(PtTimestamp timestamp, void *ignore);
+void handleController(PtTimestamp ts, uint8_t cnum, uint8_t val);
+void handleBeat(PtTimestamp ts);
 
 int main(int argc, char **argv)
 {
@@ -79,7 +92,7 @@ int main(int argc, char **argv)
                 odev = atoi(nextarg);
                 argi++;
             } else {
-                fprintf(stderr, "Invalid invocation.\n");
+                usage();
                 exit(1);
             }
         } else if (!ifile) {
@@ -87,14 +100,15 @@ int main(int argc, char **argv)
         } else if (!tfile) {
             tfile = arg;
         } else {
-            fprintf(stderr, "Invalid invocation.\n");
+            usage();
             exit(1);
         }
     }
 
     PSF(perr, Pm_Initialize, ());
     PSF(perr, Mf_Initialize, ());
-    PTSF(pterr, Pt_Start, (1, dump, NULL));
+    PTSF(pterr, Pt_Start, (1, handler, NULL));
+    memset(controllers, 0, sizeof(controllers));
 
     /* list devices */
     if (list) {
@@ -113,13 +127,13 @@ int main(int argc, char **argv)
 
     /* choose device */
     if (idev == -1 || odev == -1) {
-        fprintf(stderr, "No device selected.\n");
+        usage();
         exit(1);
     }
 
     /* check files */
     if (!ifile || !tfile) {
-        fprintf(stderr, "Need an input file and tempo output file.\n");
+        usage();
         exit(1);
     }
 
@@ -149,14 +163,90 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void dump(PtTimestamp timestamp, void *ignore)
+void usage()
+{
+    fprintf(stderr, "Usage: tempotapper -i <input device> -o <output device> <input file> <output file>\n"
+                    "\ttempotapper -l: List devices\n");
+}
+
+void handleController(PtTimestamp ts, uint8_t cnum, uint8_t val)
+{
+    struct Controller cont = controllers[cnum];
+
+    /* figure out what we can about it */
+    if (!cont.seen) {
+        cont.seen = 1;
+        if (val != 0 && val != 127) {
+            /* it's probably ranged */
+            cont.ranged = 1;
+        } else {
+            cont.ranged = 0;
+        }
+        cont.baseval = val;
+    } else if (!cont.ranged && val != 0 && val != 127) {
+        /* whoops, we were wrong! */
+        cont.ranged = 0;
+        cont.baseval = val;
+    }
+    cont.lastval = val;
+
+    controllers[cnum] = cont;
+
+    if (cont.ranged) {
+        velocity = 64 + val/2;
+    } else {
+        handleBeat(ts);
+    }
+}
+
+void handleBeat(PtTimestamp ts)
+{
+    MfEvent *event;
+
+    if (curTick < 0) {
+        /* OK, this is the very first tick. Just initialize */
+        nextTick = timeDivision * metronome / METRO_PER_QN;
+        curTick = 0;
+        lastTs = ts;
+        Mf_StreamSetTempo(ifstream, ts, 0, 0, Mf_StreamGetTempo(ifstream));
+    } else {
+        PtTimestamp diff;
+        uint32_t tempo;
+
+        /* got a tick */
+        uint32_t lastTick = curTick;
+        curTick = nextTick;
+        nextTick += timeDivision * metronome / METRO_PER_QN;
+
+        /* calculate the tempo by the diff */
+        diff = ts - lastTs;
+        tempo = (diff * 1000) * METRO_PER_QN / metronome;
+        lastTs = ts;
+        if (tempo > 0) {
+            MfMeta *meta;
+            Mf_StreamSetTempo(ifstream, ts, 0, curTick, tempo);
+
+            /* produce the tempo event */
+            event = Mf_NewEvent();
+            event->absoluteTm = lastTick;
+            event->e.message = Pm_Message(MIDI_STATUS_META, 0, 0);
+            event->meta = meta = Mf_NewMeta(3);
+            meta->type = MIDI_M_TEMPO;
+            meta->data[0] = (tempo >> 16) & 0xFF;
+            meta->data[1] = (tempo >> 8) & 0xFF;
+            meta->data[2] = tempo & 0xFF;
+            Mf_StreamWriteOne(tstream, 0, event);
+        }
+    }
+}
+
+void handler(PtTimestamp timestamp, void *ignore)
 {
     MfEvent *event;
     int track;
     PmEvent ev;
     PtTimestamp ts;
     uint32_t tmTick;
-    static uint8_t velocity = 128;
 
     if (!ready) return;
 
@@ -165,42 +255,14 @@ void dump(PtTimestamp timestamp, void *ignore)
     while (Pm_Read(idstream, &ev, 1) == 1) {
         /* take a nonzero controller event or a note on as a tick */
         uint8_t type = Pm_MessageType(ev.message);
-        if ((type == MIDI_CONTROLLER || type == MIDI_NOTE_ON) &&
-            Pm_MessageData2(ev.message) > 0) {
-            velocity = Pm_MessageData2(ev.message);
-            if (curTick < 0) {
-                /* OK, this is the very first tick. Just initialize */
-                nextTick = timeDivision * metronome / METRO_PER_QN;
-                curTick = 0;
-                lastTs = ts;
-                Mf_StreamSetTempo(ifstream, ts, 0, 0, Mf_StreamGetTempo(ifstream));
-            } else {
-                /* got a tick */
-                uint32_t lastTick = curTick;
-                curTick = nextTick;
-                nextTick += timeDivision * metronome / METRO_PER_QN;
-
-                /* calculate the tempo by the diff */
-                {
-                    PtTimestamp diff = ts - lastTs;
-                    uint32_t tempo = (diff * 1000) * METRO_PER_QN / metronome;
-                    lastTs = ts;
-                    if (tempo > 0) {
-                        MfMeta *meta;
-                        Mf_StreamSetTempo(ifstream, ts, 0, curTick, tempo);
-
-                        /* produce the tempo event */
-                        event = Mf_NewEvent();
-                        event->absoluteTm = lastTick;
-                        event->e.message = Pm_Message(MIDI_STATUS_META, 0, 0);
-                        event->meta = meta = Mf_NewMeta(3);
-                        meta->type = MIDI_M_TEMPO;
-                        meta->data[0] = (tempo >> 16) & 0xFF;
-                        meta->data[1] = (tempo >> 8) & 0xFF;
-                        meta->data[2] = tempo & 0xFF;
-                        Mf_StreamWriteOne(tstream, 0, event);
-                    }
-                }
+        uint8_t dat1 = Pm_MessageData1(ev.message);
+        uint8_t dat2 = Pm_MessageData2(ev.message);
+        if (dat2 > 0) {
+            if (type == MIDI_NOTE_ON) {
+                velocity = Pm_MessageData2(ev.message);
+                handleBeat(ts);
+            } else if (type == MIDI_CONTROLLER) {
+                handleController(ts, dat1, dat2);
             }
         }
     }
