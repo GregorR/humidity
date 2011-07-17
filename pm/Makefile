@@ -6,7 +6,7 @@ LDFLAGS=$(ELDFLAGS)
 LIBS=-lportmidi -lporttime -lm
 ELDFLAGS=
 
-TARGETS=dumpfile dumpdev chgvel timesigfixer retempofile tempotapper notetapper temposmoother mergefiles
+TARGETS=dumpfile dumpdev chgvel timesigfixer retempofile tempotapper tracktapper notetapper temposmoother mergefiles
 
 all: $(TARGETS)
 
@@ -29,6 +29,9 @@ retempofile: retempofile.o midifile/libmidifile.a
 	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
 
 tempotapper: tempotapper.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+
+tracktapper: tracktapper.o midifile/libmidifile.a
 	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
 
 notetapper: notetapper.o midifile/libmidifile.a
