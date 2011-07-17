@@ -186,12 +186,16 @@ int findNextTick(uint32_t atleast)
     MfTrack *mtrack = ifstream->file->tracks[track];
     MfEvent *cur;
     for (cur = mtrack->head; cur; cur = cur->next) {
-        if (cur->absoluteTm >= atleast) {
+        if (cur->absoluteTm >= atleast && Pm_MessageType(cur->e.message) == MIDI_NOTE_ON) {
             nextTick = cur->absoluteTm;
             nextVelocity = Pm_MessageData2(cur->e.message);
             return 1;
         }
     }
+
+    /* didn't find one, set it huge */
+    nextTick = 0x7FFFFFFF;
+    nextVelocity = 100;
     return 0;
 }
 
@@ -232,7 +236,7 @@ void handleBeat(PtTimestamp ts)
 
     if (curTick < 0) {
         /* OK, this is the very first tick. Just initialize */
-        findNextTick(0);
+        findNextTick(1);
         curTick = 0;
         lastTs = ts;
         Mf_StreamSetTempo(ifstream, ts, 0, 0, Mf_StreamGetTempo(ifstream));
@@ -247,7 +251,9 @@ void handleBeat(PtTimestamp ts)
 
         /* calculate the tempo by the diff */
         diff = ts - lastTs;
-        tempo = (diff * 1000) * METRO_PER_QN / metronome;
+        if (curTick != lastTick) {
+            tempo = (diff * 1000) * timeDivision / (curTick - lastTick);
+        }
         lastTs = ts;
         if (tempo > 0) {
             MfMeta *meta;
@@ -285,15 +291,15 @@ void handler(PtTimestamp timestamp, void *ignore)
         uint8_t dat1 = Pm_MessageData1(ev.message);
         uint8_t dat2 = Pm_MessageData2(ev.message);
         if (type == MIDI_NOTE_ON && dat2 > 0) {
-            velocityMod = dat2 - nextVelocity;
             handleBeat(ts);
+            velocityMod = dat2 - nextVelocity;
         } else if (type == MIDI_CONTROLLER) {
             handleController(ts, dat1, dat2);
         }
     }
 
     /* don't do anything if we shouldn't start yet */
-    if (nextTick < 0) return;
+    if (nextTick <= 0) return;
 
     /* figure out when to read to */
     tmTick = Mf_StreamGetTick(ifstream, ts);
@@ -307,7 +313,6 @@ void handler(PtTimestamp timestamp, void *ignore)
             if (event->meta->type == MIDI_M_TIME_SIGNATURE &&
                 event->meta->length == MIDI_M_TIME_SIGNATURE_LENGTH) {
                 metronome = MIDI_M_TIME_SIGNATURE_METRONOME(event->meta->data);
-                findNextTick(curTick + 1);
             }
         } else {
             if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
