@@ -52,10 +52,12 @@ int32_t curTick = -1, nextTick = -1, nextVelocity = -1;
 PtTimestamp lastTs = 0;
 
 /* and velocity */
-int8_t velocityMod = 0;
+double velocityMod = 1.0;
+int rangeReduction = 1;
+double velocityMix = 0.5;
 
 /* track control */
-char master = 0;
+char master = -1;
 int track = 0;
 
 /* controller info */
@@ -103,6 +105,12 @@ int main(int argc, char **argv)
                 master = 0;
                 track = atoi(nextarg);
                 argi++;
+            } else if (!strcmp(arg, "-r") && nextarg) {
+                rangeReduction = atoi(nextarg);
+                argi++;
+            } else if (!strcmp(arg, "-v") && nextarg) {
+                velocityMix = atof(nextarg);
+                argi++;
             } else {
                 usage();
                 exit(1);
@@ -144,7 +152,7 @@ int main(int argc, char **argv)
     }
 
     /* check files */
-    if (!ifile || !tfile) {
+    if (!ifile || !tfile || master == -1) {
         usage();
         exit(1);
     }
@@ -177,8 +185,11 @@ int main(int argc, char **argv)
 
 void usage()
 {
-    fprintf(stderr, "Usage: tracktapper -i <input device> -o <output device> {-m <track>|-s <track} <input file> <output file>\n"
-                    "\ttracktapper -l: List devices\n");
+    fprintf(stderr, "Usage: tracktapper -i <input device> -o <output device> {-m <track>|-s <track} [options] <input file> <output file>\n"
+                    "\ttracktapper -l: List devices\n"
+                    "Options:\n"
+                    "\t-r <reduction>: Reduce range of input velocity by given factor (default 1, no reduction).\n"
+                    "\t-v <mix>: Mix velocities from user and MIDI as requested (default 0.5 = even mix, 1 = all user).\n");
 }
 
 int findNextTick(uint32_t atleast)
@@ -223,8 +234,9 @@ void handleController(PtTimestamp ts, uint8_t cnum, uint8_t val)
     controllers[cnum] = cont;
 
     if (cont.ranged) {
-        int32_t velocity = 64 + val/2;
-        velocityMod = velocity - nextVelocity;
+        int32_t velocity = 127 - (127 - val) / rangeReduction;
+        velocity = velocityMix * velocity + (1 - velocityMix) * nextVelocity;
+        velocityMod = ((double) velocity) / ((double) nextVelocity);
     } else if (val > 0) {
         handleBeat(ts);
     }
@@ -291,8 +303,11 @@ void handler(PtTimestamp timestamp, void *ignore)
         uint8_t dat1 = Pm_MessageData1(ev.message);
         uint8_t dat2 = Pm_MessageData2(ev.message);
         if (type == MIDI_NOTE_ON && dat2 > 0) {
+            int32_t velocity;
             handleBeat(ts);
-            velocityMod = dat2 - nextVelocity;
+            velocity = 127 - (127 - dat2) / rangeReduction;
+            velocity = velocityMix * velocity + (1 - velocityMix) * nextVelocity;
+            velocityMod = ((double) velocity) / ((double) nextVelocity);
         } else if (type == MIDI_CONTROLLER) {
             handleController(ts, dat1, dat2);
         }
@@ -320,7 +335,7 @@ void handler(PtTimestamp timestamp, void *ignore)
 
                 if (Pm_MessageData2(ev.message) != 0) {
                     /* change the velocity */
-                    int32_t velocity = Pm_MessageData2(ev.message) + velocityMod;
+                    int32_t velocity = Pm_MessageData2(ev.message) * velocityMod;
                     if (velocity < 0) velocity = 0;
                     if (velocity > 127) velocity = 127;
                     ev.message = Pm_Message(
