@@ -127,6 +127,7 @@ void merge(MfEvent **events, int *tracks, int sz)
         data11 = Pm_MessageData1(events[i]->e.message);
 
         for (j = i + 1; j < sz; j++) {
+            if (tracks[i] != tracks[j]) continue;
             if (!events[j]) continue;
             type2 = Pm_MessageType(events[j]->e.message);
             data12 = Pm_MessageData1(events[j]->e.message);
