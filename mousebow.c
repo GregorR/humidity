@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011  Gregor Richards
+ * Copyright (C) 2011, 2012  Gregor Richards
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
@@ -49,7 +49,7 @@
 #define H 320
 
 /* smooth over SMOOTH seconds */
-#define SMOOTH 0.2
+#define SMOOTH 0.4
 
 /* properties of reading the mouse */
 /* to what power should we raise mouse input? 0.25 is typical */
@@ -262,7 +262,6 @@ int main(int argc, char **argv)
                                     majorY = sign(vy);
                                     rsign = 0-rsign;
                                     signChanged = 1;
-                                    fprintf(stderr, "Reset for Y axis change\n");
                                 }
                             }
                         } else {
@@ -280,7 +279,6 @@ int main(int argc, char **argv)
                                     majorY = 0;
                                     rsign = 0-rsign;
                                     signChanged = 1;
-                                    fprintf(stderr, "Reset for X axis change\n");
                                 }
                             }
                         }
