@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011  Gregor Richards
+ * Copyright (C) 2011, 2012  Gregor Richards
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
  * this software and associated documentation files (the "Software"), to deal in
