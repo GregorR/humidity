@@ -270,6 +270,7 @@ int main(int argc, char **argv)
                                 if (++chTicks >= 2) {
                                     majorX = sign(vx);
                                     majorY = 0;
+                                    chTicks = 0;
                                 }
                             } else {
                                 chTicks = 0;
