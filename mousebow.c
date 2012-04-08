@@ -204,6 +204,9 @@ int main(int argc, char **argv)
     SDL(tmpi, SDL_Init, < 0, (SDL_INIT_VIDEO|SDL_INIT_TIMER));
     atexit(SDL_Quit);
 
+    /* nice default title */
+    SDL_WM_SetCaption("Mouse Bow", NULL);
+
     /* set up our window */
     SDL(screen, SDL_SetVideoMode, == NULL, (W*2, H*2, 32, SDL_SWSURFACE));
 
@@ -472,6 +475,7 @@ void handler(PtTimestamp timestamp, void *ignore)
     if (Mf_StreamEmpty(ifstream) == TRUE) {
         MfFile *of;
         FILE *ofh;
+        SDL_Event event;
         Mf_FreeFile(Mf_CloseStream(ifstream));
         of = Mf_CloseStream(tstream);
         SF(ofh, fopen, NULL, (tfile, "wb"));
@@ -479,7 +483,12 @@ void handler(PtTimestamp timestamp, void *ignore)
         fclose(ofh);
         Mf_FreeFile(of);
         Pm_Terminate();
-        exit(0);
+
+        /* let SDL do the actual quit */
+        memset(&event, 0, sizeof(event));
+        event.type = SDL_QUIT;
+        SDL_PushEvent(&event);
+        ready = 0;
     }
 }
 

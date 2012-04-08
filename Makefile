@@ -52,4 +52,5 @@ mousebow: mousebow.o midifile/libmidifile.a
 
 clean:
 	rm -f *.o $(TARGETS)
+	rm -f mousebow
 	cd midifile ; $(MAKE) clean
