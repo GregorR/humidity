@@ -1,0 +1,54 @@
+This is a bunch of tools for humanifying MIDI files by providing realtime
+input, based on portmidi and my own midifile library. They're in various stages
+of usefulness. They are being authored by Gregor Richards in the vain hopes of
+creating better music with them.
+
+Humanification tools:
+
+ * mousebow
+    Lets you use your mouse as a "bow" (like a stringed instrument), provides
+    realtime change to the velocity/volume of notes on one track, dumps these
+    changes to a separate MIDI file.
+
+ * notetapper
+    Use a MIDI keyboard or controller to tap all the notes for one channel,
+    using the keyboard's velocity if applicable and tempo of your taps. Useful
+    for instruments with the same kind of attack and decay as a piano, e.g.
+    claviers, pizzicato and some percussion. Writes the velocities to a
+    separate MIDI file.
+
+ * retempofile
+    Use the tempo from a MIDI device to control the tempo of a MIDI file,
+    writing out the device-provided tempos to a separate MIDI file.
+
+ * tempotapper
+    Similar to notetapper, but you tap with the beat instead of every note. For
+    complicated or multi-track melodies, can provide a nice balance. Still uses
+    your velocity and tempo, but less precisely since you don't hit every note.
+
+ * tracktapper
+    Similar to notetapper, but you only tap one track, the others remain
+    unchanged.
+
+
+Other MIDI-related tools:
+ * dumpdev
+    Dumps all the input from a MIDI device.
+
+ * dumpfile
+    Dumps all the events in a MIDI file.
+
+ * mergefiles
+    Merges two MIDI files, preferring the right when ambiguous. Useful to merge
+    the output of /all/ of the humanification tools into a "final" MIDI.
+
+ * temposmoother
+    Smooths out tempo changes in a MIDI file. Makes the output from notetapper,
+    tempotapper and tracktapper a bit less wild.
+
+ * timesigfixer
+    For files with time signature values that give a valid time signature but
+    not a valid metronome for those time signatures, replaces all time
+    signature metas in a file with ones with proper metronomes. Knows common
+    metronome settings, e.g. that 4/4 is tapped in four and 6/8 is tapped in
+    two. Use this if tempotapper has weird behavior with your files.
