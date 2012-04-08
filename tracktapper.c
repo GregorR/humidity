@@ -254,7 +254,7 @@ void handleBeat(PtTimestamp ts)
         Mf_StreamSetTempo(ifstream, ts, 0, 0, Mf_StreamGetTempo(ifstream));
     } else {
         PtTimestamp diff;
-        uint32_t tempo;
+        uint32_t tempo = 0;
 
         /* got a tick */
         uint32_t lastTick = curTick;
