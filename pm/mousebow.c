@@ -62,6 +62,7 @@
  * note? This isn't due to any inaccuracies or smoothing, which is done
  * directly from mouse input, but to give the user a chance to get the mouse
  * moving as fast as they would like before the note's attack. Defined in usec.
+ * Note that the default is effectively no delay, as the mouse timer is 50ms
  * */
 #define MOUSE_DIR_TO_NOTE_DELAY 30000
 
@@ -105,6 +106,7 @@ int track = -1;
 void usage();
 void handler(PtTimestamp timestamp, void *ignore);
 void handleBeat(PtTimestamp ts);
+void fixMouse();
 
 int main(int argc, char **argv)
 {
@@ -117,7 +119,7 @@ int main(int argc, char **argv)
     SDL_Surface *screen;
     SDL_Event event;
     double tdiff, vx, vy, v, vs, vsmoo;
-    int x, y, majorX = 1, majorY = 0, rsign = -1, signChanged = 0, chTicks = 0;
+    int x, y, majorX = -1, majorY = 0, rsign = -1, signChanged = 0, chTicks = 0;
     struct timeval ta, tb;
 
     PmDeviceID odev = -1;
@@ -206,6 +208,8 @@ int main(int argc, char **argv)
     SDL(screen, SDL_SetVideoMode, == NULL, (W*2, H*2, 32, SDL_SWSURFACE));
 
     /* take the mouse */
+    system("xset m 1");
+    atexit(fixMouse);
     SDL_WarpMouse(W, H);
     SDL_AddTimer(50, mouseTimer, NULL);
     gettimeofday(&ta, NULL);
@@ -319,7 +323,7 @@ Uint32 mouseTimer(Uint32 ival, void *ignore)
 
 void usage()
 {
-    fprintf(stderr, "Usage: mousebow -i <input device> -t <track> [options] <input file> <output file>\n"
+    fprintf(stderr, "Usage: mousebow -o <output device> -t <track> [options] <input file> <output file>\n"
                     "\tmousebow -l: List devices\n");
 }
 
@@ -478,4 +482,9 @@ void handler(PtTimestamp timestamp, void *ignore)
         Pm_Terminate();
         exit(0);
     }
+}
+
+void fixMouse()
+{
+    system("xset m default");
 }
