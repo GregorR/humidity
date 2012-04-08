@@ -43,9 +43,27 @@
 } while (0)
 
 #define UE_MOUSE 1
+
+/* window size / 2 */
 #define W 320
 #define H 320
+
+/* smooth over SMOOTH seconds */
 #define SMOOTH 0.2
+
+/* properties of reading the mouse */
+/* to what power should we raise mouse input? 0.25 is typical */
+#define MOUSE_POWER 0.25
+
+/* what should we multiple mouse input by (after the power) for sensitivity? */
+#define MOUSE_SENSITIVITY 64
+
+/* When the mouse direction changes, how long should we wait before we play the
+ * note? This isn't due to any inaccuracies or smoothing, which is done
+ * directly from mouse input, but to give the user a chance to get the mouse
+ * moving as fast as they would like before the note's attack. Defined in usec.
+ * */
+#define MOUSE_DIR_TO_NOTE_DELAY 30000
 
 #define sign(x) (((x)<0)?-1:1)
 
@@ -74,7 +92,7 @@ int32_t lastVelocity = -1, nextVelocity = -1;
 /* mouse control */
 int mouseVelocity = -100;
 int mouseLastSign = -1;
-int mouseTicksSinceChange = 0;
+struct timeval mouseLastChange;
 
 /* fine velocity modification through volume (controller 7) */
 int lastVolumeMod = 0; /* last tick when we inserted a volume mod */
@@ -224,25 +242,7 @@ int main(int argc, char **argv)
 
                     /* if the velocity is significant, allow major changes */
                     if (fabs(v) > 0.1) {
-#if 0
-                        if (majorX == 0 && majorY == 0) {
-                            /* start off with 1,0 so that right is positive and left is negative */
-                            rsign = sign(vx);
-                            majorX = rsign;
-                            majorY = 0;
-                        } else {
-                            if (fabs(vy) > fabs(vx)) {
-                                majorX = 0;
-                                majorY = sign(vy);
-                            } else {
-                                majorX = sign(vx);
-                                majorY = 0;
-                            }
-                        }
-                        fprintf(stderr, "%d %d\n", majorX, majorY);
-#endif
-                        /* if we're at a stop, just use vx */
-                        /* otherwise, consider whether we need to change */
+                        /* consider whether we need to change */
                         if (fabs(vy) > fabs(vx)) {
                             if (majorX) {
                                 /* switch X -> Y */
@@ -281,17 +281,10 @@ int main(int argc, char **argv)
                             }
                         }
 
-#if 0
-                    } else if (fabs(v) < 0.001) {
-                        /* we've stopped, make sure we note it next time */
-                        majorX = majorY = 0;
-                        fprintf(stderr, "Reset for stop\n");
-#endif
-
                     }
 
                     /* get our smoothed velocity */
-                    vs = pow(v, 0.25) * rsign;
+                    vs = pow(v, MOUSE_POWER) * rsign;
                     if (signChanged) {
                         vsmoo = vs;
                         signChanged = 0;
@@ -302,7 +295,7 @@ int main(int argc, char **argv)
                             vsmoo = (vsmoo * (SMOOTH - tdiff) + vs * tdiff) / SMOOTH;
                         }
                     }
-                    mouseVelocity = vsmoo*64;
+                    mouseVelocity = vsmoo*MOUSE_SENSITIVITY;
                 }
                 break;
 
@@ -380,15 +373,28 @@ void handler(PtTimestamp timestamp, void *ignore)
     velocity = abs(mouseVelocity);
     if (velocity > 127) velocity = 127;
     if (mouseVelocity != 0 && sign(mouseVelocity) != mouseLastSign) {
-        mouseTicksSinceChange++;
-        if (mouseTicksSinceChange > 100) {
+        int32_t usecSinceChange = 0;
+        if (mouseLastChange.tv_sec == 0) {
+            gettimeofday(&mouseLastChange, NULL);
+        } else {
+            struct timeval tv;
+            gettimeofday(&tv, NULL);
+            usecSinceChange =
+                (tv.tv_usec - mouseLastChange.tv_usec) +
+                (tv.tv_sec - mouseLastChange.tv_sec) * 1000000;
+        }
+        if (usecSinceChange > MOUSE_DIR_TO_NOTE_DELAY) {
             mouseLastSign = sign(mouseVelocity);
-            mouseTicksSinceChange = 0;
+            mouseLastChange.tv_sec = 0;
             lastVelocity = velocity;
             if (lastVelocity < 64) lastVelocity = 64;
             lastVolumeModVal = 64; /* reset volume */
             handleBeat(ts);
         }
+
+    } else {
+        mouseLastChange.tv_sec = 0;
+
     }
 
     /* don't do anything if we shouldn't start yet */
@@ -409,7 +415,6 @@ void handler(PtTimestamp timestamp, void *ignore)
                 if (vol > lastVolumeModVal) vol = lastVolumeModVal + 1;
                 else vol = lastVolumeModVal - 1;
             }
-            fprintf(stderr, "vol %d\n", vol);
             lastVolumeModVal = vol;
             event = Mf_NewEvent();
             event->absoluteTm = tmTick;
