@@ -53,6 +53,8 @@ PtTimestamp lastTs = 0;
 
 #define MAX_SIMUL 1024
 
+void usage();
+
 void dump(PtTimestamp timestamp, void *ignore);
 
 int peek(MfStream *stream, MfEvent **events, int *tracks, int32_t length, uint32_t *timeNext);
@@ -85,7 +87,7 @@ int main(int argc, char **argv)
                 odev = atoi(nextarg);
                 argi++;
             } else {
-                fprintf(stderr, "Invalid invocation.\n");
+                usage();
                 exit(1);
             }
         } else if (!ifile) {
@@ -93,7 +95,7 @@ int main(int argc, char **argv)
         } else if (!tfile) {
             tfile = arg;
         } else {
-            fprintf(stderr, "Invalid invocation.\n");
+            usage();
             exit(1);
         }
     }
@@ -119,13 +121,13 @@ int main(int argc, char **argv)
 
     /* choose device */
     if (idev == -1 || odev == -1) {
-        fprintf(stderr, "No device selected.\n");
+        usage();
         exit(1);
     }
 
     /* check files */
     if (!ifile || !tfile) {
-        fprintf(stderr, "Need an input file and tempo output file.\n");
+        usage();
         exit(1);
     }
 
@@ -168,6 +170,12 @@ int main(int argc, char **argv)
     while (1) Pt_Sleep(1<<30);
 
     return 0;
+}
+
+void usage()
+{
+    fprintf(stderr, "Usage: notetapper -i <input device> -o <output device> <input file> <output file>\n"
+                    "       notetapper -l: List devices\n");
 }
 
 void dump(PtTimestamp timestamp, void *ignore)

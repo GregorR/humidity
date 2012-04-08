@@ -52,6 +52,7 @@ int32_t curTick = -1, nextTick = -1;
 PtTimestamp lastTs = 0;
 
 /* and velocity */
+int setVelocity = 0;
 uint8_t velocity = 100;
 
 /* controller info */
@@ -85,6 +86,8 @@ int main(int argc, char **argv)
         if (arg[0] == '-') {
             if (!strcmp(arg, "-l")) {
                 list = 1;
+            } else if (!strcmp(arg, "-v")) {
+                setVelocity = 1;
             } else if (!strcmp(arg, "-i") && nextarg) {
                 idev = atoi(nextarg);
                 argi++;
@@ -165,8 +168,10 @@ int main(int argc, char **argv)
 
 void usage()
 {
-    fprintf(stderr, "Usage: tempotapper -i <input device> -o <output device> <input file> <output file>\n"
-                    "\ttempotapper -l: List devices\n");
+    fprintf(stderr, "Usage: tempotapper -i <input device> -o <output device> [-v] <input file> <output file>\n"
+                    "       tempotapper -l: List devices\n"
+                    "Options:\n"
+                    "\t-v: Set velocity as well as tempo.\n");
 }
 
 void handleController(PtTimestamp ts, uint8_t cnum, uint8_t val)
@@ -286,19 +291,19 @@ void handler(PtTimestamp timestamp, void *ignore)
             if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
                 MfEvent *newevent;
 
-                if (Pm_MessageData2(ev.message) != 0) {
+                if (setVelocity && Pm_MessageData2(ev.message) != 0) {
                     /* change the velocity */
                     ev.message = Pm_Message(
                         Pm_MessageStatus(ev.message),
                         Pm_MessageData1(ev.message),
                         velocity);
-                }
 
-                /* and write it to our output */
-                newevent = Mf_NewEvent();
-                newevent->absoluteTm = event->absoluteTm;
-                newevent->e.message = ev.message;
-                Mf_StreamWriteOne(tstream, track, newevent);
+                    /* and write it to our output */
+                    newevent = Mf_NewEvent();
+                    newevent->absoluteTm = event->absoluteTm;
+                    newevent->e.message = ev.message;
+                    Mf_StreamWriteOne(tstream, track, newevent);
+                }
             }
             Pm_WriteShort(odstream, 0, ev.message);
         }

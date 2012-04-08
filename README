@@ -32,6 +32,11 @@ Humanification tools:
 
 
 Other MIDI-related tools:
+ * chgvel
+    Reduce the velocity range of a file to the top 1/nth of the range. Useful
+    for inputs with extremely high dynamic range (such as this author's digital
+    piano).
+
  * dumpdev
     Dumps all the input from a MIDI device.
 

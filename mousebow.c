@@ -326,7 +326,7 @@ Uint32 mouseTimer(Uint32 ival, void *ignore)
 void usage()
 {
     fprintf(stderr, "Usage: mousebow -o <output device> -t <track> [options] <input file> <output file>\n"
-                    "\tmousebow -l: List devices\n");
+                    "       mousebow -l: List devices\n");
 }
 
 int findNextTick(uint32_t atleast)
@@ -393,8 +393,14 @@ void handler(PtTimestamp timestamp, void *ignore)
             mouseLastSign = sign(mouseVelocity);
             mouseLastChange.tv_sec = 0;
             lastVelocity = velocity;
+
+            /* now use the last volume to adjust the new velocity, since we can't change the volume too fast */
+            lastVelocity /= (double) lastVolumeMod / 64.0;
+
+            /* if we're too quiet, it'll barely even play, let volume take care of it */
             if (lastVelocity < 64) lastVelocity = 64;
-            lastVolumeModVal = 64; /* reset volume */
+
+            /* OK, let the beat go on */
             handleBeat(ts);
         }
 
