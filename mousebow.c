@@ -425,7 +425,7 @@ void handler(PtTimestamp timestamp, void *ignore)
             event = Mf_NewEvent();
             event->absoluteTm = tmTick;
             event->e.message = Pm_Message((MIDI_CONTROLLER<<4) + track - 1, 7 /* volume */, vol);
-            Mf_StreamWriteOne(tstream, 0, event);
+            Mf_StreamWriteOne(tstream, track, event);
             Pm_WriteShort(odstream, 0, event->e.message);
             lastVolumeMod = tmTick;
         }
@@ -463,7 +463,7 @@ void handler(PtTimestamp timestamp, void *ignore)
                     newevent = Mf_NewEvent();
                     newevent->absoluteTm = event->absoluteTm;
                     newevent->e.message = ev.message;
-                    Mf_StreamWriteOne(tstream, rtrack, newevent);
+                    Mf_StreamWriteOne(tstream, track, newevent);
                 }
             }
             Pm_WriteShort(odstream, 0, ev.message);
