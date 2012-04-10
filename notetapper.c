@@ -200,7 +200,8 @@ int handleEvent(HS, PtTimestamp timestamp, uint32_t tick, int rtrack, MfEvent *e
     if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
         MfEvent *newevent;
 
-        if (Pm_MessageData2(ev.message) != 0 && pstate->track == rtrack) {
+        if (Pm_MessageData2(ev.message) != 0 &&
+            (pstate->track == -1 || pstate->track == rtrack)) {
             /* change the velocity */
             int32_t velocity = pstate->lastVelocity;
             if (velocity < 0) velocity = 0;
