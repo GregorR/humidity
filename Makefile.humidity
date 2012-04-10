@@ -2,9 +2,10 @@ CC=gcc
 CFLAGS=-O2 -g -fPIC $(ECFLAGS)
 ECFLAGS=
 LD=$(CC)
-LDFLAGS=$(ELDFLAGS) -Wl,--export-dynamic
+LDFLAGS=$(ELDFLAGS) -Lmidifile -Wl,--export-dynamic
 SHFLAGS=-shared
 LIBS=-lportmidi -lporttime -lm
+MIDIFILE_LIBS=-lmidifile
 SDL_LIBS=-lSDL
 ELDFLAGS=
 
@@ -14,25 +15,25 @@ TARGETS=dumpfile dumpdev chgvel timesigfixer retempofile temposmoother \
 all: $(TARGETS)
 
 midifile/libmidifile.a:
-	cd midifile ; $(MAKE)
+	cd midifile ; $(MAKE) ECFLAGS="$(CFLAGS)"
 
 # Cancel GNU make's builtin rule
 %: %.c
 
 %: %.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+	$(LD) $(CFLAGS) $(LDFLAGS) $< $(MIDIFILE_LIBS) $(LIBS) -o $@
 
 humidity: humidity.o whereami.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< whereami.o midifile/libmidifile.a $(LIBS) -o $@
+	$(LD) $(CFLAGS) $(LDFLAGS) $< whereami.o $(MIDIFILE_LIBS) $(LIBS) -o $@
 
 dumpdev: dumpdev.o
 	$(LD) $(CFLAGS) $(LDFLAGS) $< $(LIBS) -o $@
 
-%.so: %-sdl.o
-	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< $(LIBS) $(SDL_LIBS) -o $@
+%.so: %-sdl.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< $(MIDIFILE_LIBS) $(LIBS) $(SDL_LIBS) -o $@
 
-%.so: %.o
-	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< $(LIBS) -o $@
+%.so: %.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< $(MIDIFILE_LIBS) $(LIBS) -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
