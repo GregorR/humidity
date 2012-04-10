@@ -97,7 +97,7 @@ int main(int argc, char **argv)
 
     PSF(perr, Pm_Initialize, ());
     PSF(perr, Mf_Initialize, ());
-    PTSF(pterr, Pt_Start, (1, handler, (void *) &hstate));
+    PTSF(pterr, Pt_Start, (1, handler, (void *) hstate));
 
     /* list devices */
     if (listDevices) {
