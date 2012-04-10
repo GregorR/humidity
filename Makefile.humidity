@@ -40,8 +40,11 @@ temposmoother: temposmoother.o midifile/libmidifile.a
 mergefiles: mergefiles.o midifile/libmidifile.a
 	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
 
+%.so: %-sdl.o
+	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< $(LIBS) $(SDL_LIBS) -o $@
+
 %.so: %.o
-	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< -o $@
+	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< $(LIBS) -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

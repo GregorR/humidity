@@ -109,6 +109,7 @@ int init(HS)
 {
     struct MouseBowState *mbstate;
     SF(mbstate, calloc, NULL, (1, sizeof(struct MouseBowState)));
+    hstate->pstate[pnum] = (void *) mbstate;
     mbstate->lastVelocity = mbstate->nextVelocity = -1;
     mbstate->mouseVelocity = -100;
     mbstate->mouseLastSign = -1;
