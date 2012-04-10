@@ -1,56 +1,43 @@
 CC=gcc
-CFLAGS=-O2 -g $(ECFLAGS)
+CFLAGS=-O2 -g -fPIC $(ECFLAGS)
 ECFLAGS=
 LD=$(CC)
-LDFLAGS=$(ELDFLAGS)
+LDFLAGS=$(ELDFLAGS) -Lmidifile -Wl,--export-dynamic
+SHFLAGS=-shared
 LIBS=-lportmidi -lporttime -lm
+MIDIFILE_LIBS=-lmidifile
 SDL_LIBS=-lSDL
 ELDFLAGS=
 
-TARGETS=dumpfile dumpdev chgvel timesigfixer retempofile tempotapper tracktapper notetapper temposmoother mergefiles
+TARGETS=dumpfile dumpdev chgvel timesigfixer temposmoother mergefiles humidity \
+    play.so mousebow.so notetapper.so
 
 all: $(TARGETS)
 
 midifile/libmidifile.a:
-	cd midifile ; $(MAKE)
+	cd midifile ; $(MAKE) ECFLAGS="$(CFLAGS)"
 
-dumpfile: dumpfile.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+# Cancel GNU make's builtin rule
+%: %.c
+
+%: %.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< $(MIDIFILE_LIBS) $(LIBS) -o $@
+
+humidity: humidity.o whereami.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< whereami.o $(MIDIFILE_LIBS) $(LIBS) -o $@
 
 dumpdev: dumpdev.o
 	$(LD) $(CFLAGS) $(LDFLAGS) $< $(LIBS) -o $@
 
-chgvel: chgvel.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+%.so: %-sdl.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< $(MIDIFILE_LIBS) $(LIBS) $(SDL_LIBS) -o $@
 
-timesigfixer: timesigfixer.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
-
-retempofile: retempofile.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
-
-tempotapper: tempotapper.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
-
-tracktapper: tracktapper.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
-
-notetapper: notetapper.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
-
-temposmoother: temposmoother.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
-
-mergefiles: mergefiles.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
-
-mousebow: mousebow.o midifile/libmidifile.a
-	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) $(SDL_LIBS) -o $@
+%.so: %.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< $(MIDIFILE_LIBS) $(LIBS) -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -f *.o $(TARGETS)
-	rm -f mousebow
 	cd midifile ; $(MAKE) clean
