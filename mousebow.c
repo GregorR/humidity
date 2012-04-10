@@ -21,7 +21,6 @@
  */
 
 #include <math.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,10 +28,14 @@
 
 #include <SDL/SDL.h>
 
+#include "args.h"
 #include "helpers.h"
+#include "hplugin.h"
 #include "midifile/midi.h"
 #include "midifile/midifstream.h"
 #include "pmhelpers.h"
+
+#define HS struct HumidityState *hstate, int pnum
 
 #define SDL(into, func, bad, args) do { \
     (into) = (func) args; \
@@ -68,137 +71,80 @@
 
 #define sign(x) (((x)<0)?-1:1)
 
-Uint32 mouseTimer(Uint32 ival, void *ignore);
+struct MouseBowState {
+    /* instantaneous velocity coming from the mouse, adjusted to be MIDI in tickPreMidi */
+    int32_t velocity;
 
-#define METRO_PER_QN 24
+    /* velocity as-played of the last (still-playing) note as played */
+    int32_t lastVelocity;
 
-/* input file stream */
-MfStream *ifstream = NULL;
-MfStream *tstream = NULL;
+    /* velocity of the next note as written */
+    int32_t nextVelocity;
 
-/* input and output device streams */
-PortMidiStream *odstream = NULL;
+    /* mouse control */
+    int mouseVelocity;
+    int mouseLastSign;
+    struct timeval mouseLastChange;
 
-int ready = 0;
+    /* fine velocity modification through volume (controller 7) */
+    int lastVolumeMod; /* last tick when we inserted a volume mod */
+    int lastVolumeModVal; /* and its value */
 
-/* tempo file to write to */
-char *tfile = NULL;
+    /* track control */
+    int track;
 
-/* tick of the next note (note to wait for an event before playing) */
-int32_t nextTick = -1;
-
-/* velocity of the last (still-playing) note as played, velocity of the next note as written */
-int32_t lastVelocity = -1, nextVelocity = -1;
-
-/* mouse control */
-int mouseVelocity = -100;
-int mouseLastSign = -1;
-struct timeval mouseLastChange;
-
-/* fine velocity modification through volume (controller 7) */
-int lastVolumeMod = 0; /* last tick when we inserted a volume mod */
-int lastVolumeModVal = 64; /* and its value */
-
-/* track control */
-int track = -1;
+    /* and finally, the SDL screen from which we will be reading mouse info */
+    SDL_Surface *screen;
+};
+#define MBS struct MouseBowState *mbstate = hstate->pstate[pnum]
 
 /* functions */
-void usage();
 void handler(PtTimestamp timestamp, void *ignore);
-void handleBeat(PtTimestamp ts);
-void fixMouse();
+static void handleBeat(HS, PtTimestamp ts);
 
-int main(int argc, char **argv)
+static Uint32 mouseTimer(Uint32 ival, void *ignore);
+static void fixMouse();
+
+int init(HS)
 {
-    FILE *f;
-    PmError perr;
-    PtError pterr;
-    MfFile *pf, *tf;
-    int argi, i, tmpi;
-    char *arg, *nextarg, *ifile;
-    SDL_Surface *screen;
-    SDL_Event event;
-    double tdiff, vx, vy, v, vs, vsmoo;
-    int x, y, majorX = -1, majorY = 0, rsign = -1, signChanged = 0, chTicks = 0;
-    struct timeval ta, tb;
+    struct MouseBowState *mbstate;
+    SF(mbstate, calloc, NULL, (1, sizeof(struct MouseBowState)));
+    mbstate->lastVelocity = mbstate->nextVelocity = -1;
+    mbstate->mouseVelocity = -100;
+    mbstate->mouseLastSign = -1;
+    mbstate->lastVolumeModVal = 64;
+    mbstate->track = -1;
+    return 1;
+}
 
-    PmDeviceID odev = -1;
-    int list = 0;
-    ifile = tfile = NULL;
-
-    for (argi = 1; argi < argc; argi++) {
-        arg = argv[argi];
-        nextarg = argv[argi+1];
-        if (arg[0] == '-') {
-            if (!strcmp(arg, "-l")) {
-                list = 1;
-            } else if (!strcmp(arg, "-o") && nextarg) {
-                odev = atoi(nextarg);
-                argi++;
-            } else if (!strcmp(arg, "-t") && nextarg) {
-                track = atoi(nextarg);
-                argi++;
-            } else {
-                usage();
-                exit(1);
-            }
-        } else if (!ifile) {
-            ifile = arg;
-        } else if (!tfile) {
-            tfile = arg;
-        } else {
-            usage();
-            exit(1);
-        }
+int argHandler(HS, int *argi, char **argv)
+{
+    MBS;
+    char *arg = argv[*argi];
+    ARGN(t, track) {
+        mbstate->track = atoi(argv[++*argi]);
+        ++*argi;
+        return 1;
     }
+    return 0;
+}
 
-    PSF(perr, Pm_Initialize, ());
-    PSF(perr, Mf_Initialize, ());
-    PTSF(pterr, Pt_Start, (1, handler, NULL));
+int usage(HS)
+{
+    fprintf(stderr, "mousebow usage: -p mousebow -t <track>\n");
+    return 1;
+}
 
-    /* list devices */
-    if (list) {
-        int ct = Pm_CountDevices();
-        PmDeviceID def = Pm_GetDefaultInputDeviceID();
-        const PmDeviceInfo *devinf;
+int begin(HS)
+{
+    MBS;
+    int tmpi;
 
-        for (i = 0; i < ct; i++) {
-            devinf = Pm_GetDeviceInfo(i);
-            printf("%d%s: %s%s %s\n", i, (def == i) ? "*" : "",
-                (devinf->input) ? "I" : "",
-                (devinf->output) ? "O" : "",
-                devinf->name);
-        }
-    }
-
-    /* choose device */
-    if (odev == -1) {
-        usage();
+    /* if we didn't get a track, complain */
+    if (mbstate->track < 0) {
+        usage(hstate, pnum);
         exit(1);
     }
-
-    /* check files */
-    if (!ifile || !tfile || track == -1) {
-        usage();
-        exit(1);
-    }
-
-    /* open it for input/output */
-    PSF(perr, Pm_OpenOutput, (&odstream, odev, NULL, 1024, NULL, NULL, 0));
-
-    /* open the file for input */
-    SF(f, fopen, NULL, (ifile, "rb"));
-
-    /* and read it */
-    PSF(perr, Mf_ReadMidiFile, (&pf, f));
-    fclose(f);
-
-    /* now start running */
-    ifstream = Mf_OpenStream(pf);
-    Mf_StartStream(ifstream, Pt_Time());
-
-    tf = Mf_NewFile(pf->timeDivision);
-    tstream = Mf_OpenStream(tf);
 
     /* set up SDL ... */
     SDL(tmpi, SDL_Init, < 0, (SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -208,18 +154,27 @@ int main(int argc, char **argv)
     SDL_WM_SetCaption("Mouse Bow", NULL);
 
     /* set up our window */
-    SDL(screen, SDL_SetVideoMode, == NULL, (W*2, H*2, 32, SDL_SWSURFACE));
+    SDL(mbstate->screen, SDL_SetVideoMode, == NULL, (W*2, H*2, 32, SDL_SWSURFACE));
 
     /* take the mouse */
     system("xset m 1");
     atexit(fixMouse);
     SDL_WarpMouse(W, H);
     SDL_AddTimer(50, mouseTimer, NULL);
-    gettimeofday(&ta, NULL);
 
-    ready = 1;
+    return 1;
+}
+
+int mainLoop(HS)
+{
+    MBS;
+    SDL_Event event;
+    double tdiff, vx, vy, v, vs, vsmoo = 0;
+    int x, y, majorX = -1, majorY = 0, rsign = -1, signChanged = 0, chTicks = 0;
+    struct timeval ta, tb;
 
     /* poll for events */
+    gettimeofday(&ta, NULL);
     while (SDL_WaitEvent(&event)) {
         switch (event.type) {
             case SDL_KEYDOWN:
@@ -301,7 +256,7 @@ int main(int argc, char **argv)
                             vsmoo = (vsmoo * (SMOOTH - tdiff) + vs * tdiff) / SMOOTH;
                         }
                     }
-                    mouseVelocity = vsmoo*MOUSE_SENSITIVITY;
+                    mbstate->mouseVelocity = vsmoo*MOUSE_SENSITIVITY;
                 }
                 break;
 
@@ -310,10 +265,151 @@ int main(int argc, char **argv)
         }
     }
 
+    return 1;
+}
+
+int findNextTick(HS, uint32_t atleast)
+{
+    MBS;
+    MfTrack *mtrack = hstate->ifstream->file->tracks[mbstate->track];
+    MfEvent *cur;
+    for (cur = mtrack->head; cur; cur = cur->next) {
+        if (cur->absoluteTm >= atleast && Pm_MessageType(cur->e.message) == MIDI_NOTE_ON) {
+            hstate->nextTick = cur->absoluteTm;
+            mbstate->nextVelocity = Pm_MessageData2(cur->e.message);
+            return 1;
+        }
+    }
+
+    /* didn't find one, set it huge */
+    hstate->nextTick = 0x7FFFFFFF;
+    mbstate->nextVelocity = 100;
     return 0;
 }
 
-Uint32 mouseTimer(Uint32 ival, void *ignore)
+static void handleBeat(HS, PtTimestamp ts)
+{
+    if (hstate->nextTick < 0) {
+        /* OK, this is the very first tick. Just initialize */
+        findNextTick(hstate, pnum, 1);
+        Mf_StreamSetTempo(hstate->ifstream, ts, 0, 0, Mf_StreamGetTempo(hstate->ifstream));
+
+    } else {
+        /* got a tick */
+        int32_t curTick = hstate->nextTick;
+        findNextTick(hstate, pnum, curTick + 1);
+
+        Mf_StreamSetTempo(hstate->ifstream, ts, 0, curTick, Mf_StreamGetTempo(hstate->ifstream));
+    }
+}
+
+int tickPreMidi(HS, PtTimestamp timestamp)
+{
+    MBS;
+    mbstate->velocity = abs(mbstate->mouseVelocity);
+    if (mbstate->velocity > 127) mbstate->velocity = 127;
+    if (mbstate->velocity != 0 && sign(mbstate->mouseVelocity) != mbstate->mouseLastSign) {
+        int32_t usecSinceChange = 0;
+        if (mbstate->mouseLastChange.tv_sec == 0) {
+            gettimeofday(&mbstate->mouseLastChange, NULL);
+        } else {
+            struct timeval tv;
+            gettimeofday(&tv, NULL);
+            usecSinceChange =
+                (tv.tv_usec - mbstate->mouseLastChange.tv_usec) +
+                (tv.tv_sec - mbstate->mouseLastChange.tv_sec) * 1000000;
+        }
+        if (usecSinceChange > MOUSE_DIR_TO_NOTE_DELAY) {
+            mbstate->mouseLastSign = sign(mbstate->mouseVelocity);
+            mbstate->mouseLastChange.tv_sec = 0;
+            mbstate->lastVelocity = mbstate->velocity;
+
+            /* now use the last volume to adjust the new velocity, since we can't change the volume too fast */
+            mbstate->lastVelocity /= (double) mbstate->lastVolumeMod / 64.0;
+
+            /* if we're too quiet, it'll barely even play, let volume take care of it */
+            if (mbstate->lastVelocity < 64) mbstate->lastVelocity = 64;
+
+            /* OK, let the beat go on */
+            handleBeat(hstate, pnum, timestamp);
+        }
+
+    } else {
+        mbstate->mouseLastChange.tv_sec = 0;
+
+    }
+
+    return 1;
+}
+
+int tickWithMidi(HS, PtTimestamp timestamp, uint32_t tmTick)
+{
+    MBS;
+    MfEvent *event;
+
+    if (tmTick > mbstate->lastVolumeMod) {
+        int vol = ((double) mbstate->velocity) / ((double) mbstate->lastVelocity) * 64;
+        if (vol < 0) vol = 0;
+        if (vol > 127) vol = 127;
+        if (abs(vol - mbstate->lastVolumeModVal) > 1) {
+            /* don't move so fast! */
+            if (vol > mbstate->lastVolumeModVal) vol = mbstate->lastVolumeModVal + 1;
+            else vol = mbstate->lastVolumeModVal - 1;
+        }
+        mbstate->lastVolumeModVal = vol;
+        event = Mf_NewEvent();
+        event->absoluteTm = tmTick;
+        event->e.message = Pm_Message((MIDI_CONTROLLER<<4) + mbstate->track - 1, 7 /* volume */, vol);
+        Mf_StreamWriteOne(hstate->ofstream, mbstate->track, event);
+        Pm_WriteShort(hstate->odstream, 0, event->e.message);
+        mbstate->lastVolumeMod = tmTick;
+    }
+
+    return 1;
+}
+
+int handleEvent(HS, PtTimestamp timestamp, uint32_t tmTick, int rtrack, MfEvent *event)
+{
+    MBS;
+    PmEvent ev = event->e;
+    if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
+        MfEvent *newevent;
+
+        if (Pm_MessageData2(ev.message) != 0 && mbstate->track == rtrack) {
+            /* change the velocity */
+            int32_t velocity = mbstate->lastVelocity;
+            if (velocity < 0) velocity = 0;
+            if (velocity > 127) velocity = 127;
+            ev.message = Pm_Message(
+                    Pm_MessageStatus(ev.message),
+                    Pm_MessageData1(ev.message),
+                    velocity);
+
+            /* and write it to our output */
+            newevent = Mf_NewEvent();
+            newevent->absoluteTm = event->absoluteTm;
+            newevent->e.message = ev.message;
+            Mf_StreamWriteOne(hstate->ofstream, rtrack, newevent);
+        }
+    }
+
+    return 1;
+}
+
+int quit(HS, int status)
+{
+    SDL_Event event;
+
+    /* FIXME: ignoring status */
+    /* let SDL do the actual quit */
+    memset(&event, 0, sizeof(event));
+    event.type = SDL_QUIT;
+    SDL_PushEvent(&event);
+
+    return 1;
+}
+
+static Uint32 mouseTimer(Uint32 ival, void *ignore)
 {
     SDL_Event event;
     memset(&event, 0, sizeof(event));
@@ -323,182 +419,7 @@ Uint32 mouseTimer(Uint32 ival, void *ignore)
     return ival;
 }
 
-void usage()
-{
-    fprintf(stderr, "Usage: mousebow -o <output device> -t <track> [options] <input file> <output file>\n"
-                    "       mousebow -l: List devices\n");
-}
-
-int findNextTick(uint32_t atleast)
-{
-    MfTrack *mtrack = ifstream->file->tracks[track];
-    MfEvent *cur;
-    for (cur = mtrack->head; cur; cur = cur->next) {
-        if (cur->absoluteTm >= atleast && Pm_MessageType(cur->e.message) == MIDI_NOTE_ON) {
-            nextTick = cur->absoluteTm;
-            nextVelocity = Pm_MessageData2(cur->e.message);
-            return 1;
-        }
-    }
-
-    /* didn't find one, set it huge */
-    nextTick = 0x7FFFFFFF;
-    nextVelocity = 100;
-    return 0;
-}
-
-void handleBeat(PtTimestamp ts)
-{
-    if (nextTick < 0) {
-        /* OK, this is the very first tick. Just initialize */
-        findNextTick(1);
-        Mf_StreamSetTempo(ifstream, ts, 0, 0, Mf_StreamGetTempo(ifstream));
-
-    } else {
-        /* got a tick */
-        int32_t curTick = nextTick;
-        findNextTick(curTick + 1);
-
-        Mf_StreamSetTempo(ifstream, ts, 0, curTick, Mf_StreamGetTempo(ifstream));
-    }
-}
-
-void handler(PtTimestamp timestamp, void *ignore)
-{
-    MfEvent *event;
-    int rtrack;
-    PmEvent ev;
-    PtTimestamp ts;
-    uint32_t tmTick;
-    int velocity;
-
-    if (!ready) return;
-
-    ts = Pt_Time();
-
-    velocity = abs(mouseVelocity);
-    if (velocity > 127) velocity = 127;
-    if (mouseVelocity != 0 && sign(mouseVelocity) != mouseLastSign) {
-        int32_t usecSinceChange = 0;
-        if (mouseLastChange.tv_sec == 0) {
-            gettimeofday(&mouseLastChange, NULL);
-        } else {
-            struct timeval tv;
-            gettimeofday(&tv, NULL);
-            usecSinceChange =
-                (tv.tv_usec - mouseLastChange.tv_usec) +
-                (tv.tv_sec - mouseLastChange.tv_sec) * 1000000;
-        }
-        if (usecSinceChange > MOUSE_DIR_TO_NOTE_DELAY) {
-            mouseLastSign = sign(mouseVelocity);
-            mouseLastChange.tv_sec = 0;
-            lastVelocity = velocity;
-
-            /* now use the last volume to adjust the new velocity, since we can't change the volume too fast */
-            lastVelocity /= (double) lastVolumeMod / 64.0;
-
-            /* if we're too quiet, it'll barely even play, let volume take care of it */
-            if (lastVelocity < 64) lastVelocity = 64;
-
-            /* OK, let the beat go on */
-            handleBeat(ts);
-        }
-
-    } else {
-        mouseLastChange.tv_sec = 0;
-
-    }
-
-    /* don't do anything if we shouldn't start yet */
-    if (nextTick <= 0) return;
-
-    /* figure out when to read to */
-    tmTick = Mf_StreamGetTick(ifstream, ts);
-    if (tmTick >= nextTick) tmTick = nextTick - 1;
-
-    /* write out our volume mod for this tick */
-    else {
-        if (tmTick > lastVolumeMod) {
-            int vol = ((double) velocity) / ((double) lastVelocity) * 64;
-            if (vol < 0) vol = 0;
-            if (vol > 127) vol = 127;
-            if (abs(vol - lastVolumeModVal) > 1) {
-                /* don't move so fast! */
-                if (vol > lastVolumeModVal) vol = lastVolumeModVal + 1;
-                else vol = lastVolumeModVal - 1;
-            }
-            lastVolumeModVal = vol;
-            event = Mf_NewEvent();
-            event->absoluteTm = tmTick;
-            event->e.message = Pm_Message((MIDI_CONTROLLER<<4) + track - 1, 7 /* volume */, vol);
-            Mf_StreamWriteOne(tstream, track, event);
-            Pm_WriteShort(odstream, 0, event->e.message);
-            lastVolumeMod = tmTick;
-        }
-    }
-
-    while (Mf_StreamReadUntil(ifstream, &event, &rtrack, 1, tmTick) == 1) {
-        ev = event->e;
-
-        if (event->meta) {
-            if (event->meta->type == MIDI_M_TEMPO &&
-                event->meta->length == MIDI_M_TEMPO_LENGTH) {
-                PtTimestamp ts;
-                unsigned char *data = event->meta->data;
-                uint32_t tempo = (data[0] << 16) +
-                    (data[1] << 8) +
-                    data[2];
-                Mf_StreamSetTempoTick(ifstream, &ts, event->absoluteTm, tempo);
-            }
-
-        } else {
-            if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
-                MfEvent *newevent;
-
-                if (Pm_MessageData2(ev.message) != 0 && track == rtrack) {
-                    /* change the velocity */
-                    int32_t velocity = lastVelocity;
-                    if (velocity < 0) velocity = 0;
-                    if (velocity > 127) velocity = 127;
-                    ev.message = Pm_Message(
-                        Pm_MessageStatus(ev.message),
-                        Pm_MessageData1(ev.message),
-                        velocity);
-
-                    /* and write it to our output */
-                    newevent = Mf_NewEvent();
-                    newevent->absoluteTm = event->absoluteTm;
-                    newevent->e.message = ev.message;
-                    Mf_StreamWriteOne(tstream, track, newevent);
-                }
-            }
-            Pm_WriteShort(odstream, 0, ev.message);
-        }
-
-        Mf_FreeEvent(event);
-    }
-
-    if (Mf_StreamEmpty(ifstream) == TRUE) {
-        MfFile *of;
-        FILE *ofh;
-        SDL_Event event;
-        Mf_FreeFile(Mf_CloseStream(ifstream));
-        of = Mf_CloseStream(tstream);
-        SF(ofh, fopen, NULL, (tfile, "wb"));
-        Mf_WriteMidiFile(ofh, of);
-        fclose(ofh);
-        Mf_FreeFile(of);
-        Pm_Terminate();
-
-        /* let SDL do the actual quit */
-        memset(&event, 0, sizeof(event));
-        event.type = SDL_QUIT;
-        SDL_PushEvent(&event);
-        ready = 0;
-    }
-}
-
-void fixMouse()
+static void fixMouse()
 {
     system("xset m default");
 }

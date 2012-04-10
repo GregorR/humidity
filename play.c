@@ -26,7 +26,7 @@
 
 #define HS struct HumidityState *hstate, int pnum
 
-int init(HS)
+int begin(HS)
 {
     hstate->nextTick = 0x7FFFFFFF; /* just set it huge so we never stop playback */
     return 1;
