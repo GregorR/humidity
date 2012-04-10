@@ -3,6 +3,12 @@ input, based on portmidi and my own midifile library. They're in various stages
 of usefulness. They are being authored by Gregor Richards in the vain hopes of
 creating better music with them.
 
+At present I'm in the process of adapting all the humanification tools to use a
+plugin framework, since they do mostly the same thing. That plugin framework
+will be called 'humidity'. You may have to back up or fast forward through
+revision history to find a version in which everything actually works until
+humidity is finished.
+
 Humanification tools:
 
  * mousebow
