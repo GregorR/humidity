@@ -1,0 +1,51 @@
+CC=gcc
+CFLAGS=-O2 -g -fPIC $(ECFLAGS)
+ECFLAGS=
+LD=$(CC)
+LDFLAGS=$(ELDFLAGS) -Wl,--export-dynamic
+SHFLAGS=-shared
+LIBS=-lportmidi -lporttime -lm
+SDL_LIBS=-lSDL
+ELDFLAGS=
+
+TARGETS=dumpfile dumpdev chgvel timesigfixer retempofile temposmoother mergefiles humidity play.so
+
+all: $(TARGETS)
+
+midifile/libmidifile.a:
+	cd midifile ; $(MAKE)
+
+humidity: humidity.o whereami.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< whereami.o midifile/libmidifile.a $(LIBS) -o $@
+
+dumpfile: dumpfile.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+
+dumpdev: dumpdev.o
+	$(LD) $(CFLAGS) $(LDFLAGS) $< $(LIBS) -o $@
+
+chgvel: chgvel.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+
+timesigfixer: timesigfixer.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+
+retempofile: retempofile.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+
+temposmoother: temposmoother.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+
+mergefiles: mergefiles.o midifile/libmidifile.a
+	$(LD) $(CFLAGS) $(LDFLAGS) $< midifile/libmidifile.a $(LIBS) -o $@
+
+%.so: %.o
+	$(LD) $(CFLAGS) $(LDFLAGS) $(SHFLAGS) $< -o $@
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f *.o $(TARGETS)
+	rm -f mousebow
+	cd midifile ; $(MAKE) clean
