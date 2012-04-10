@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+#define IN_HUMIDITY_PLUGIN MouseBow
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,8 +36,6 @@
 #include "midifile/midi.h"
 #include "midifile/midifstream.h"
 #include "pmhelpers.h"
-
-#define HS struct HumidityState *hstate, int pnum
 
 #define SDL(into, func, bad, args) do { \
     (into) = (func) args; \
@@ -96,7 +96,6 @@ struct MouseBowState {
     /* and finally, the SDL screen from which we will be reading mouse info */
     SDL_Surface *screen;
 };
-#define MBS struct MouseBowState *mbstate = hstate->pstate[pnum]
 
 /* functions */
 void handler(PtTimestamp timestamp, void *ignore);
@@ -107,23 +106,23 @@ static void fixMouse();
 
 int init(HS)
 {
-    struct MouseBowState *mbstate;
-    SF(mbstate, calloc, NULL, (1, sizeof(struct MouseBowState)));
-    hstate->pstate[pnum] = (void *) mbstate;
-    mbstate->lastVelocity = mbstate->nextVelocity = -1;
-    mbstate->mouseVelocity = -100;
-    mbstate->mouseLastSign = -1;
-    mbstate->lastVolumeModVal = 64;
-    mbstate->track = -1;
+    struct MouseBowState *pstate;
+    SF(pstate, calloc, NULL, (1, sizeof(struct MouseBowState)));
+    hstate->pstate[pnum] = (void *) pstate;
+    pstate->lastVelocity = pstate->nextVelocity = -1;
+    pstate->mouseVelocity = -100;
+    pstate->mouseLastSign = -1;
+    pstate->lastVolumeModVal = 64;
+    pstate->track = -1;
     return 1;
 }
 
 int argHandler(HS, int *argi, char **argv)
 {
-    MBS;
+    STATE;
     char *arg = argv[*argi];
     ARGN(t, track) {
-        mbstate->track = atoi(argv[++*argi]);
+        pstate->track = atoi(argv[++*argi]);
         ++*argi;
         return 1;
     }
@@ -138,11 +137,11 @@ int usage(HS)
 
 int begin(HS)
 {
-    MBS;
+    STATE;
     int tmpi;
 
     /* if we didn't get a track, complain */
-    if (mbstate->track < 0) {
+    if (pstate->track < 0) {
         usage(hstate, pnum);
         exit(1);
     }
@@ -155,7 +154,7 @@ int begin(HS)
     SDL_WM_SetCaption("Mouse Bow", NULL);
 
     /* set up our window */
-    SDL(mbstate->screen, SDL_SetVideoMode, == NULL, (W*2, H*2, 32, SDL_SWSURFACE));
+    SDL(pstate->screen, SDL_SetVideoMode, == NULL, (W*2, H*2, 32, SDL_SWSURFACE));
 
     /* take the mouse */
     system("xset m 1");
@@ -168,7 +167,7 @@ int begin(HS)
 
 int mainLoop(HS)
 {
-    MBS;
+    STATE;
     SDL_Event event;
     double tdiff, vx, vy, v, vs, vsmoo = 0;
     int x, y, majorX = -1, majorY = 0, rsign = -1, signChanged = 0, chTicks = 0;
@@ -257,7 +256,7 @@ int mainLoop(HS)
                             vsmoo = (vsmoo * (SMOOTH - tdiff) + vs * tdiff) / SMOOTH;
                         }
                     }
-                    mbstate->mouseVelocity = vsmoo*MOUSE_SENSITIVITY;
+                    pstate->mouseVelocity = vsmoo*MOUSE_SENSITIVITY;
                 }
                 break;
 
@@ -271,20 +270,22 @@ int mainLoop(HS)
 
 int findNextTick(HS, uint32_t atleast)
 {
-    MBS;
-    MfTrack *mtrack = hstate->ifstream->file->tracks[mbstate->track];
+    STATE;
+    MfTrack *mtrack = hstate->ifstream->file->tracks[pstate->track];
     MfEvent *cur;
     for (cur = mtrack->head; cur; cur = cur->next) {
-        if (cur->absoluteTm >= atleast && Pm_MessageType(cur->e.message) == MIDI_NOTE_ON) {
+        if (cur->absoluteTm >= atleast &&
+            Pm_MessageType(cur->e.message) == MIDI_NOTE_ON &&
+            Pm_MessageData2(cur->e.message) > 0) {
             hstate->nextTick = cur->absoluteTm;
-            mbstate->nextVelocity = Pm_MessageData2(cur->e.message);
+            pstate->nextVelocity = Pm_MessageData2(cur->e.message);
             return 1;
         }
     }
 
     /* didn't find one, set it huge */
     hstate->nextTick = 0x7FFFFFFF;
-    mbstate->nextVelocity = 100;
+    pstate->nextVelocity = 100;
     return 0;
 }
 
@@ -306,37 +307,37 @@ static void handleBeat(HS, PtTimestamp ts)
 
 int tickPreMidi(HS, PtTimestamp timestamp)
 {
-    MBS;
-    mbstate->velocity = abs(mbstate->mouseVelocity);
-    if (mbstate->velocity > 127) mbstate->velocity = 127;
-    if (mbstate->velocity != 0 && sign(mbstate->mouseVelocity) != mbstate->mouseLastSign) {
+    STATE;
+    pstate->velocity = abs(pstate->mouseVelocity);
+    if (pstate->velocity > 127) pstate->velocity = 127;
+    if (pstate->velocity != 0 && sign(pstate->mouseVelocity) != pstate->mouseLastSign) {
         int32_t usecSinceChange = 0;
-        if (mbstate->mouseLastChange.tv_sec == 0) {
-            gettimeofday(&mbstate->mouseLastChange, NULL);
+        if (pstate->mouseLastChange.tv_sec == 0) {
+            gettimeofday(&pstate->mouseLastChange, NULL);
         } else {
             struct timeval tv;
             gettimeofday(&tv, NULL);
             usecSinceChange =
-                (tv.tv_usec - mbstate->mouseLastChange.tv_usec) +
-                (tv.tv_sec - mbstate->mouseLastChange.tv_sec) * 1000000;
+                (tv.tv_usec - pstate->mouseLastChange.tv_usec) +
+                (tv.tv_sec - pstate->mouseLastChange.tv_sec) * 1000000;
         }
         if (usecSinceChange > MOUSE_DIR_TO_NOTE_DELAY) {
-            mbstate->mouseLastSign = sign(mbstate->mouseVelocity);
-            mbstate->mouseLastChange.tv_sec = 0;
-            mbstate->lastVelocity = mbstate->velocity;
+            pstate->mouseLastSign = sign(pstate->mouseVelocity);
+            pstate->mouseLastChange.tv_sec = 0;
+            pstate->lastVelocity = pstate->velocity;
 
             /* now use the last volume to adjust the new velocity, since we can't change the volume too fast */
-            mbstate->lastVelocity /= (double) mbstate->lastVolumeMod / 64.0;
+            pstate->lastVelocity /= (double) pstate->lastVolumeMod / 64.0;
 
             /* if we're too quiet, it'll barely even play, let volume take care of it */
-            if (mbstate->lastVelocity < 64) mbstate->lastVelocity = 64;
+            if (pstate->lastVelocity < 64) pstate->lastVelocity = 64;
 
             /* OK, let the beat go on */
             handleBeat(hstate, pnum, timestamp);
         }
 
     } else {
-        mbstate->mouseLastChange.tv_sec = 0;
+        pstate->mouseLastChange.tv_sec = 0;
 
     }
 
@@ -345,25 +346,25 @@ int tickPreMidi(HS, PtTimestamp timestamp)
 
 int tickWithMidi(HS, PtTimestamp timestamp, uint32_t tmTick)
 {
-    MBS;
+    STATE;
     MfEvent *event;
 
-    if (tmTick > mbstate->lastVolumeMod) {
-        int vol = ((double) mbstate->velocity) / ((double) mbstate->lastVelocity) * 64;
+    if (tmTick > pstate->lastVolumeMod) {
+        int vol = ((double) pstate->velocity) / ((double) pstate->lastVelocity) * 64;
         if (vol < 0) vol = 0;
         if (vol > 127) vol = 127;
-        if (abs(vol - mbstate->lastVolumeModVal) > 1) {
+        if (abs(vol - pstate->lastVolumeModVal) > 1) {
             /* don't move so fast! */
-            if (vol > mbstate->lastVolumeModVal) vol = mbstate->lastVolumeModVal + 1;
-            else vol = mbstate->lastVolumeModVal - 1;
+            if (vol > pstate->lastVolumeModVal) vol = pstate->lastVolumeModVal + 1;
+            else vol = pstate->lastVolumeModVal - 1;
         }
-        mbstate->lastVolumeModVal = vol;
+        pstate->lastVolumeModVal = vol;
         event = Mf_NewEvent();
         event->absoluteTm = tmTick;
-        event->e.message = Pm_Message((MIDI_CONTROLLER<<4) + mbstate->track - 1, 7 /* volume */, vol);
-        Mf_StreamWriteOne(hstate->ofstream, mbstate->track, event);
+        event->e.message = Pm_Message((MIDI_CONTROLLER<<4) + pstate->track - 1, 7 /* volume */, vol);
+        Mf_StreamWriteOne(hstate->ofstream, pstate->track, event);
         Pm_WriteShort(hstate->odstream, 0, event->e.message);
-        mbstate->lastVolumeMod = tmTick;
+        pstate->lastVolumeMod = tmTick;
     }
 
     return 1;
@@ -371,14 +372,14 @@ int tickWithMidi(HS, PtTimestamp timestamp, uint32_t tmTick)
 
 int handleEvent(HS, PtTimestamp timestamp, uint32_t tmTick, int rtrack, MfEvent *event)
 {
-    MBS;
+    STATE;
     PmEvent ev = event->e;
     if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
         MfEvent *newevent;
 
-        if (Pm_MessageData2(ev.message) != 0 && mbstate->track == rtrack) {
+        if (Pm_MessageData2(ev.message) != 0 && pstate->track == rtrack) {
             /* change the velocity */
-            int32_t velocity = mbstate->lastVelocity;
+            int32_t velocity = pstate->lastVelocity;
             if (velocity < 0) velocity = 0;
             if (velocity > 127) velocity = 127;
             ev.message = Pm_Message(

@@ -20,11 +20,11 @@
  * SOFTWARE.
  */
 
+#define IN_HUMIDITY_PLUGIN Play
+
 #include <stdio.h>
 
 #include "hplugin.h"
-
-#define HS struct HumidityState *hstate, int pnum
 
 int begin(HS)
 {

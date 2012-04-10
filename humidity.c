@@ -142,8 +142,9 @@ int main(int argc, char **argv)
     /* open everything in streaming mode */
     hstate->ifstream = Mf_OpenStream(pf);
     Mf_StartStream(hstate->ifstream, Pt_Time());
-
     of = Mf_NewFile(pf->timeDivision);
+    while (of->tracks < pf->tracks)
+        Mf_NewTrack(of);
     hstate->ofstream = Mf_OpenStream(of);
 
     /* any plugin initialization */
@@ -244,7 +245,7 @@ void loadPlugin(struct HumidityState *hstate, char *bindir, char *pluginNm)
 void usage(struct HumidityState *hstate)
 {
     int pusage = 0;
-    fprintf(stderr, "Usage: humidity -i <input device> -o <output device> -p <plugin> [plugin options] <input file> <output file>\n"
+    fprintf(stderr, "Usage: humidity -o <output device> -p <plugin> [plugin options] <input file> <output file>\n"
                     "       humidity -l: List devices\n");
     PFUNC(pusage, 1, |=, usage, (PA));
 }
@@ -283,10 +284,7 @@ void handler(PtTimestamp timestamp, void *vphstate)
             if (event->meta->type == MIDI_M_TEMPO &&
                 event->meta->length == MIDI_M_TEMPO_LENGTH) {
                 PtTimestamp ts;
-                unsigned char *data = event->meta->data;
-                uint32_t tempo = (data[0] << 16) +
-                    (data[1] << 8) +
-                    data[2];
+                uint32_t tempo = MIDI_M_TEMPO_N(event->meta->data);
                 Mf_StreamSetTempoTick(hstate->ifstream, &ts, event->absoluteTm, tempo);
             }
 

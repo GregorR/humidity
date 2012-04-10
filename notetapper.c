@@ -20,6 +20,8 @@
  * SOFTWARE.
  */
 
+#define IN_HUMIDITY_PLUGIN NoteTapper
+
 #include <alloca.h>
 #include <math.h>
 #include <stdio.h>
@@ -27,325 +29,194 @@
 #include <string.h>
 
 #include "helpers.h"
+#include "hplugin.h"
 #include "midifile/midi.h"
 #include "midifile/midifstream.h"
 #include "pmhelpers.h"
 
 #define METRO_PER_QN 24
 
-/* input file stream */
-MfStream *ifstream = NULL;
-MfStream *tstream = NULL;
+struct NoteTapperState {
+    /* track control */
+    int track;
 
-/* input and output device streams */
-PortMidiStream *idstream = NULL;
-PortMidiStream *odstream = NULL;
+    /* metronome */
+    uint16_t timeDivision;
+    int32_t lastTick;
+    PtTimestamp lastTs;
 
-int ready = 0;
-
-/* tempo file to write to */
-char *tfile = NULL;
-
-/* metronome */
-uint16_t timeDivision = 0;
-uint32_t curTick = 0, nextTick = 0;
-PtTimestamp lastTs = 0;
+    /* and velocity */
+    int16_t lastVelocity;
+};
 
 #define MAX_SIMUL 1024
 
-void usage();
+int usage(HS);
 
-void dump(PtTimestamp timestamp, void *ignore);
-
-int peek(MfStream *stream, MfEvent **events, int *tracks, int32_t length, uint32_t *timeNext);
-
-int main(int argc, char **argv)
+int init(HS)
 {
-    FILE *f;
-    PmError perr;
-    PtError pterr;
-    MfFile *pf, *tf;
-    int argi, i, rd;
-    char *arg, *nextarg, *ifile;
-    MfEvent *events[MAX_SIMUL];
-    int tracks[MAX_SIMUL];
+    struct NoteTapperState *pstate;
+    SF(pstate, calloc, NULL, (1, sizeof(struct NoteTapperState)));
+    pstate->track = -1;
+    hstate->pstate[pnum] = (void *) pstate;
+    return 1;
+}
 
-    PmDeviceID idev = -1, odev = -1;
-    int list = 0;
-    ifile = tfile = NULL;
-
-    for (argi = 1; argi < argc; argi++) {
-        arg = argv[argi];
-        nextarg = argv[argi+1];
-        if (arg[0] == '-') {
-            if (!strcmp(arg, "-l")) {
-                list = 1;
-            } else if (!strcmp(arg, "-i") && nextarg) {
-                idev = atoi(nextarg);
-                argi++;
-            } else if (!strcmp(arg, "-o") && nextarg) {
-                odev = atoi(nextarg);
-                argi++;
-            } else {
-                usage();
-                exit(1);
-            }
-        } else if (!ifile) {
-            ifile = arg;
-        } else if (!tfile) {
-            tfile = arg;
-        } else {
-            usage();
-            exit(1);
-        }
-    }
-
-    PSF(perr, Pm_Initialize, ());
-    PSF(perr, Mf_Initialize, ());
-    PTSF(pterr, Pt_Start, (1, dump, NULL));
-
-    /* list devices */
-    if (list) {
-        int ct = Pm_CountDevices();
-        PmDeviceID def = Pm_GetDefaultInputDeviceID();
-        const PmDeviceInfo *devinf;
-
-        for (i = 0; i < ct; i++) {
-            devinf = Pm_GetDeviceInfo(i);
-            printf("%d%s: %s%s %s\n", i, (def == i) ? "*" : "",
-                (devinf->input) ? "I" : "",
-                (devinf->output) ? "O" : "",
-                devinf->name);
-        }
-    }
-
-    /* choose device */
-    if (idev == -1 || odev == -1) {
-        usage();
+int begin(HS)
+{
+    /* need an input device */
+    if (hstate->idev == -1) {
+        usage(hstate, pnum);
         exit(1);
     }
 
-    /* check files */
-    if (!ifile || !tfile) {
-        usage();
-        exit(1);
-    }
-
-    /* open it for input/output */
-    PSF(perr, Pm_OpenInput, (&idstream, idev, NULL, 1024, NULL, NULL));
-    PSF(perr, Pm_OpenOutput, (&odstream, odev, NULL, 1024, NULL, NULL, 0));
-
-    /* open the file for input */
-    SF(f, fopen, NULL, (ifile, "rb"));
-
-    /* and read it */
-    PSF(perr, Mf_ReadMidiFile, (&pf, f));
-    fclose(f);
-    timeDivision = pf->timeDivision;
-
-    /* make a tempo file with the right number of tracks */
-    tf = Mf_NewFile(pf->timeDivision);
-    while (tf->tracks < pf->tracks) {
-        Mf_NewTrack(tf);
-    }
-    tstream = Mf_OpenStream(tf);
-
-    /* now start running */
-    ifstream = Mf_OpenStream(pf);
-    Mf_StartStream(ifstream, Pt_Time());
-
+#if 0
+    Is this necessary?
     /* peek for first events */
     do {
-        rd = peek(ifstream, events, tracks, MAX_SIMUL, &nextTick);
+        rd = peek(hstate->ifstream, events, tracks, MAX_SIMUL, &hstate->nextTick);
         for (i = 0; i < rd; i++) {
             if (!events[i]->meta) {
                 Pm_WriteShort(odstream, 0, events[i]->e.message);
             }
             Mf_FreeEvent(events[i]);
         }
-    } while (nextTick == (uint32_t) -1);
+    } while (hstate->nextTick == -1);
+#endif
 
-    ready = 1;
-
-    while (1) Pt_Sleep(1<<30);
-
-    return 0;
+    return 1;
 }
 
-void usage()
+int usage(HS)
 {
-    fprintf(stderr, "Usage: notetapper -i <input device> -o <output device> <input file> <output file>\n"
-                    "       notetapper -l: List devices\n");
+    fprintf(stderr, "notetapper usage: -p notetapper -i <input device>\n");
+    return 1;
 }
 
-void dump(PtTimestamp timestamp, void *ignore)
+static void findNextTick(HS, uint32_t atleast)
 {
-    MfEvent *events[MAX_SIMUL];
-    int tracks[MAX_SIMUL];
-    MfEvent *event;
-    int track, rd, i;
+    STATE;
+    uint32_t earliest = 0x7FFFFFFF;
+    int rtrack;
+
+    /* look for the very next note */
+    for (rtrack = (pstate->track < 0) ? 0 : pstate->track;
+         rtrack < (pstate->track < 0) ? hstate->ifstream->file->trackCt : (pstate->track + 1);
+         rtrack++) {
+        MfTrack *mtrack = hstate->ifstream->file->tracks[pstate->track];
+        MfEvent *cur;
+        for (cur = mtrack->head; cur; cur = cur->next) {
+            if (cur->absoluteTm > earliest) break;
+            if (cur->absoluteTm >= atleast &&
+                Pm_MessageType(cur->e.message) == MIDI_NOTE_ON &&
+                Pm_MessageData2(cur->e.message) > 0) {
+                earliest = cur->absoluteTm;
+                break;
+            }
+        }
+    }
+    hstate->nextTick = earliest;
+}
+
+static void handleBeat(HS, PtTimestamp ts)
+{
+    STATE;
+    int32_t curTick = 0;
+
+    if (hstate->nextTick < 0) {
+        /* OK, this is the very first tick. Just initialize */
+        findNextTick(hstate, pnum, 1);
+        Mf_StreamSetTempo(hstate->ifstream, ts, 0, 0, Mf_StreamGetTempo(hstate->ifstream));
+
+    } else {
+        PtTimestamp diff;
+        uint32_t tempo;
+
+        /* got a tick */
+        curTick = hstate->nextTick;
+        findNextTick(hstate, pnum, curTick + 1);
+
+        /* pstate->lastTick is the tick of the last note (still ringing)
+         * curTick is the tick of the current note (from these two we calculate the tempo)
+         * pstate->nextTick is the tick of the upcoming note */
+        diff = ts - pstate->lastTs;
+        tempo = (diff * 1000) * pstate->timeDivision / (curTick - pstate->lastTick);
+        if (tempo > 0) {
+            MfEvent *event;
+            MfMeta *meta;
+            Mf_StreamSetTempo(hstate->ifstream, ts, 0, curTick, tempo);
+
+            /* produce the tempo event */
+            event = Mf_NewEvent();
+            event->absoluteTm = pstate->lastTick;
+            event->e.message = Pm_Message(MIDI_STATUS_META, 0, 0);
+            event->meta = meta = Mf_NewMeta(MIDI_M_TEMPO_LENGTH);
+            meta->type = MIDI_M_TEMPO;
+            MIDI_M_TEMPO_N_SET(meta->data, tempo);
+            Mf_StreamWriteOne(hstate->ofstream, 0, event);
+
+        } else {
+            /* always need to set some tick/tempo or the timing will be off */
+            Mf_StreamSetTempo(hstate->ifstream, ts, 0, curTick, Mf_StreamGetTempo(hstate->ifstream));
+
+        }
+    }
+
+    pstate->lastTick = curTick;
+    pstate->lastTs = ts;
+}
+
+int tickPreMidi(HS, PtTimestamp timestamp)
+{
+    STATE;
     PmEvent ev;
-    PtTimestamp ts;
 
-    if (!ready) return;
-
-    ts = Pt_Time();
-
-    while (Pm_Read(idstream, &ev, 1) == 1) {
-        /* take a nonzero controller event or a note on as a note */
+    /* wait for an event from the input device */
+    while (Pm_Read(hstate->idstream, &ev, 1) == 1) {
+        /* looking for a MIDI_NOTE_ON */
         uint8_t type = Pm_MessageType(ev.message);
         if (type == MIDI_NOTE_ON) {
-            /* got a tick */
             uint8_t velocity = Pm_MessageData2(ev.message);
-            uint32_t lastTick = curTick;
 
             /* some keyboards (read: mine) seem to think it's funny to send
              * note on events with velocity 0 instead of note off events */
             if (velocity == 0) continue;
 
-            curTick = nextTick;
+            /* mark its velocity */
+            pstate->lastVelocity = ev.message;
 
-            /* figure out when the next one is */
-            while (Mf_StreamReadUntil(ifstream, &event, &track, 1, curTick) == 1) {
-                if (!event->meta) {
-                    if (Pm_MessageType(event->e.message) == MIDI_NOTE_ON) {
-                        MfEvent *newEvent;
-
-                        /* change its velocity */
-                        event->e.message = Pm_Message(
-                            Pm_MessageStatus(event->e.message),
-                            Pm_MessageData1(event->e.message),
-                            velocity);
-
-                        /* and make an identical event for the "tempo" filestream */
-                        newEvent = Mf_NewEvent();
-                        newEvent->absoluteTm = event->absoluteTm;
-                        newEvent->e.message = event->e.message;
-                        Mf_StreamWriteOne(tstream, track, newEvent);
-                    }
-                    Pm_WriteShort(odstream, 0, event->e.message);
-                }
-                Mf_FreeEvent(event);
-            }
-            do {
-                rd = peek(ifstream, events, tracks, MAX_SIMUL, &nextTick);
-                for (i = 0; i < rd; i++) {
-                    if (!events[i]->meta) {
-                        Pm_WriteShort(odstream, 0, events[i]->e.message);
-                    }
-                    Mf_FreeEvent(events[i]);
-                }
-            } while (!Mf_StreamEmpty(ifstream) && nextTick == (uint32_t) -1);
-
-            /* calculate the tempo by the diff */
-            if (curTick != lastTick) {
-                PtTimestamp diff = ts - lastTs;
-                uint32_t tempo = (diff * 1000) * timeDivision / (curTick - lastTick);
-                if (tempo > 0) {
-                    MfMeta *meta;
-                    Mf_StreamSetTempo(ifstream, ts, 0, curTick, tempo);
-
-                    /* produce the tempo event */
-                    event = Mf_NewEvent();
-                    event->absoluteTm = lastTick;
-                    event->e.message = Pm_Message(MIDI_STATUS_META, 0, 0);
-                    event->meta = meta = Mf_NewMeta(3);
-                    meta->type = MIDI_M_TEMPO;
-                    meta->data[0] = (tempo >> 16) & 0xFF;
-                    meta->data[1] = (tempo >> 8) & 0xFF;
-                    meta->data[2] = tempo & 0xFF;
-                    Mf_StreamWriteOne(tstream, 0, event);
-                }
-            }
-            lastTs = ts;
-
-        } else if (type != MIDI_NOTE_OFF) {
-            /* send all other non-meta input events directly, as well as recording them */
-            if (Pm_MessageType(ev.message) != MIDI_META) {
-                for (i = 1; i < tstream->file->trackCt; i++) {
-                    event = Mf_NewEvent();
-                    event->absoluteTm = curTick;
-                    event->e.message = Pm_Message(
-                        (type<<4)|(i-1),
-                        Pm_MessageData1(ev.message),
-                        Pm_MessageData2(ev.message));
-                    Pm_WriteShort(odstream, 0, event->e.message);
-                    Mf_StreamWriteOne(tstream, i, event);
-                }
-            }
+            /* and handle the beat */
+            handleBeat(hstate, pnum, timestamp);
         }
     }
 
-    if (Mf_StreamEmpty(ifstream) == TRUE) {
-        MfFile *of;
-        FILE *ofh;
-        Mf_FreeFile(Mf_CloseStream(ifstream));
-        of = Mf_CloseStream(tstream);
-        SF(ofh, fopen, NULL, (tfile, "wb"));
-        Mf_WriteMidiFile(ofh, of);
-        fclose(ofh);
-        Mf_FreeFile(of);
-        Pm_Terminate();
-        exit(0);
-    }
+    return 1;
 }
 
-int peek(MfStream *stream, MfEvent **events, int *tracks, int32_t length, uint32_t *timeNext)
+int handleEvent(HS, PtTimestamp timestamp, uint32_t tick, int rtrack, MfEvent *event)
 {
-    int rd, i, pbi, foundNote;
-    uint32_t max = (uint32_t) -1;
-    uint32_t cur;
-    MfEvent **evPutBack;
-    int *tPutBack;
+    STATE;
+    PmEvent ev = event->e;
+    if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
+        MfEvent *newevent;
 
-    /* allocate space for notes to put back */
-    pbi = 0;
-    evPutBack = alloca(length * sizeof(MfEvent *));
-    tPutBack = alloca(length * sizeof(int));
+        if (Pm_MessageData2(ev.message) != 0 && pstate->track == rtrack) {
+            /* change the velocity */
+            int32_t velocity = pstate->lastVelocity;
+            if (velocity < 0) velocity = 0;
+            if (velocity > 127) velocity = 127;
+            ev.message = Pm_Message(
+                    Pm_MessageStatus(ev.message),
+                    Pm_MessageData1(ev.message),
+                    velocity);
 
-    /* then pull them out, pulse by pulse */
-    foundNote = 0;
-    for (i = 0; i < length && !foundNote && !Mf_StreamEmpty(stream);) {
-        cur = Mf_StreamNext(stream);
-        if (cur > max) break;
-        while (i < length && Mf_StreamReadUntil(stream, events + i, tracks + i, 1, cur) == 1) {
-            uint8_t type = Pm_MessageType(events[i]->e.message);
-            if (type == MIDI_NOTE_ON || type == MIDI_NOTE_OFF) {
-                /* don't read this one */
-                if (type == MIDI_NOTE_ON) {
-                    if (cur < max) max = cur;
-                    foundNote = 1;
-                }
-                evPutBack[pbi] = events[i];
-                tPutBack[pbi] = tracks[i];
-                pbi++;
-                if (pbi >= length) {
-                    /* ACK! Escape! */
-                    foundNote = 1;
-                    break;
-                }
-            } else {
-                i++;
-            }
+            /* and write it to our output */
+            newevent = Mf_NewEvent();
+            newevent->absoluteTm = event->absoluteTm;
+            newevent->e.message = ev.message;
+            Mf_StreamWriteOne(hstate->ofstream, rtrack, newevent);
         }
     }
-    rd = i;
-    *timeNext = max;
 
-    /* if we didn't find a note, then give them the OFF events */
-    if (!foundNote) {
-        for (i = 0; i < pbi; i++) {
-            events[i] = evPutBack[i];
-            tracks[i] = tPutBack[i];
-        }
-        rd = pbi;
-        pbi = 0;
-    }
-
-    /* put back the ones that should be put back */
-    for (i = pbi - 1; i >= 0; i--) {
-        Mf_PushEventHead(stream->file->tracks[tPutBack[i]], evPutBack[i]);
-    }
-
-    return rd;
+    return 1;
 }
