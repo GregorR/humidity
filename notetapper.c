@@ -193,13 +193,11 @@ int tickPreMidi(HS, PtTimestamp timestamp)
     return 1;
 }
 
-int handleEvent(HS, PtTimestamp timestamp, uint32_t tick, int rtrack, MfEvent *event)
+int handleEvent(HS, PtTimestamp timestamp, uint32_t tick, int rtrack, MfEvent *event, int *writeOut)
 {
     STATE;
     PmEvent ev = event->e;
     if (Pm_MessageType(ev.message) == MIDI_NOTE_ON) {
-        MfEvent *newevent;
-
         if (Pm_MessageData2(ev.message) != 0 &&
             (pstate->track == -1 || pstate->track == rtrack)) {
             /* change the velocity */
@@ -212,12 +210,10 @@ int handleEvent(HS, PtTimestamp timestamp, uint32_t tick, int rtrack, MfEvent *e
                     velocity);
 
             /* and write it to our output */
-            newevent = Mf_NewEvent();
-            newevent->absoluteTm = event->absoluteTm;
-            newevent->e.message = ev.message;
-            Mf_StreamWriteOne(hstate->ofstream, rtrack, newevent);
+            *writeOut = 1;
         }
     }
+    event->e = ev;
 
     return 1;
 }

@@ -253,8 +253,7 @@ void usage(struct HumidityState *hstate)
 void handler(PtTimestamp timestamp, void *vphstate)
 {
     MfEvent *event;
-    int rtrack, tmpi;
-    PmEvent ev;
+    int rtrack, tmpi, writeOut;
     uint32_t tmTick;
     struct HumidityState *hstate = (struct HumidityState *) vphstate;
 
@@ -278,8 +277,6 @@ void handler(PtTimestamp timestamp, void *vphstate)
     if (!tmpi) return;
 
     while (Mf_StreamReadUntil(hstate->ifstream, &event, &rtrack, 1, tmTick) == 1) {
-        ev = event->e;
-
         if (event->meta) {
             if (event->meta->type == MIDI_M_TEMPO &&
                 event->meta->length == MIDI_M_TEMPO_LENGTH) {
@@ -290,10 +287,19 @@ void handler(PtTimestamp timestamp, void *vphstate)
 
         } else {
             /* perhaps a plugin will handle this event */
+            writeOut = 0;
             tmpi = 1;
-            PFUNC(tmpi, tmpi, &=, handleEvent, (PA, timestamp, tmTick, rtrack, event));
-            if (tmpi)
-                Pm_WriteShort(hstate->odstream, 0, ev.message);
+            PFUNC(tmpi, tmpi, &=, handleEvent, (PA, timestamp, tmTick, rtrack, event, &writeOut));
+            if (tmpi) {
+                Pm_WriteShort(hstate->odstream, 0, event->e.message);
+                if (writeOut) {
+                    MfEvent *newevent;
+                    newevent = Mf_NewEvent();
+                    newevent->absoluteTm = event->absoluteTm;
+                    newevent->e.message = event->e.message;
+                    Mf_StreamWriteOne(hstate->ofstream, rtrack, newevent);
+                }
+            }
 
         }
 
