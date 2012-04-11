@@ -52,7 +52,7 @@
 #define H 320
 
 /* smooth over SMOOTH seconds */
-#define SMOOTH 0.4
+#define SMOOTH 0.2
 
 /* properties of reading the mouse */
 /* to what power should we raise mouse input? 0.25 is typical */
@@ -335,12 +335,13 @@ int tickPreMidi(HS, PtTimestamp timestamp)
 
 #if 0
             /* now use the last expression to adjust the new velocity, since we can't change the expression too fast */
-            pstate->lastVelocity /= (double) pstate->lastExpressionMod / 64.0;
+            pstate->lastVelocity /= (double) pstate->lastExpressionModVal / 64.0;
 #endif
-            pstate->lastExpressionModVal = 64; /* allow the expression to change instantaneously */
+            pstate->lastExpressionModVal = 64;
 
             /* if we're too quiet, it'll barely even play, let expression take care of it */
             if (pstate->lastVelocity < 64) pstate->lastVelocity = 64;
+            if (pstate->lastVelocity > 127) pstate->lastVelocity = 127;
 
             /* OK, let the beat go on */
             handleBeat(hstate, pnum, timestamp);
