@@ -86,9 +86,9 @@ struct MouseBowState {
     int mouseLastSign;
     struct timeval mouseLastChange;
 
-    /* fine velocity modification through volume (controller 7) */
-    int lastVolumeMod; /* last tick when we inserted a volume mod */
-    int lastVolumeModVal; /* and its value */
+    /* fine velocity modification through expression (controller 11) */
+    int lastExpressionMod; /* last tick when we inserted an expression mod */
+    int lastExpressionModVal; /* and its value */
 
     /* track control */
     int track;
@@ -112,7 +112,7 @@ int init(HS)
     pstate->lastVelocity = pstate->nextVelocity = -1;
     pstate->mouseVelocity = -100;
     pstate->mouseLastSign = -1;
-    pstate->lastVolumeModVal = 64;
+    pstate->lastExpressionModVal = 64;
     pstate->track = -1;
     return 1;
 }
@@ -138,13 +138,20 @@ int usage(HS)
 int begin(HS)
 {
     STATE;
-    int tmpi;
+    int tmpi, i;
 
     /* if we didn't get a track, complain */
     if (pstate->track < 0) {
         usage(hstate, pnum);
         exit(1);
     }
+
+    /* set the expression of each channel */
+    for (i = 0; i < 16; i++) {
+        PmMessage msg;
+        msg = Pm_Message((MIDI_CONTROLLER<<4) + i, 11 /* expression */, 64);
+        Pm_WriteShort(hstate->odstream, 0, msg);
+    };
 
     /* set up SDL ... */
     SDL(tmpi, SDL_Init, < 0, (SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -326,10 +333,13 @@ int tickPreMidi(HS, PtTimestamp timestamp)
             pstate->mouseLastChange.tv_sec = 0;
             pstate->lastVelocity = pstate->velocity;
 
-            /* now use the last volume to adjust the new velocity, since we can't change the volume too fast */
-            pstate->lastVelocity /= (double) pstate->lastVolumeMod / 64.0;
+#if 0
+            /* now use the last expression to adjust the new velocity, since we can't change the expression too fast */
+            pstate->lastVelocity /= (double) pstate->lastExpressionMod / 64.0;
+#endif
+            pstate->lastExpressionModVal = 64; /* allow the expression to change instantaneously */
 
-            /* if we're too quiet, it'll barely even play, let volume take care of it */
+            /* if we're too quiet, it'll barely even play, let expression take care of it */
             if (pstate->lastVelocity < 64) pstate->lastVelocity = 64;
 
             /* OK, let the beat go on */
@@ -349,22 +359,22 @@ int tickWithMidi(HS, PtTimestamp timestamp, uint32_t tmTick)
     STATE;
     MfEvent *event;
 
-    if (tmTick > pstate->lastVolumeMod) {
+    if (tmTick > pstate->lastExpressionMod) {
         int vol = ((double) pstate->velocity) / ((double) pstate->lastVelocity) * 64;
         if (vol < 0) vol = 0;
         if (vol > 127) vol = 127;
-        if (abs(vol - pstate->lastVolumeModVal) > 1) {
+        if (abs(vol - pstate->lastExpressionModVal) > 1) {
             /* don't move so fast! */
-            if (vol > pstate->lastVolumeModVal) vol = pstate->lastVolumeModVal + 1;
-            else vol = pstate->lastVolumeModVal - 1;
+            if (vol > pstate->lastExpressionModVal) vol = pstate->lastExpressionModVal + 1;
+            else vol = pstate->lastExpressionModVal - 1;
         }
-        pstate->lastVolumeModVal = vol;
+        pstate->lastExpressionModVal = vol;
         event = Mf_NewEvent();
         event->absoluteTm = tmTick;
-        event->e.message = Pm_Message((MIDI_CONTROLLER<<4) + pstate->track - 1, 7 /* volume */, vol);
+        event->e.message = Pm_Message((MIDI_CONTROLLER<<4) + pstate->track - 1, 11 /* expression */, vol);
         Mf_StreamWriteOne(hstate->ofstream, pstate->track, event);
         Pm_WriteShort(hstate->odstream, 0, event->e.message);
-        pstate->lastVolumeMod = tmTick;
+        pstate->lastExpressionMod = tmTick;
     }
 
     return 1;
