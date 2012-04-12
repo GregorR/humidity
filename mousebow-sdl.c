@@ -35,6 +35,7 @@
 #include "hplugin.h"
 #include "midifile/midi.h"
 #include "midifile/midifstream.h"
+#include "miditag.h"
 #include "pmhelpers.h"
 
 #define SDL(into, func, bad, args) do { \
@@ -145,6 +146,9 @@ int begin(HS)
         usage(hstate, pnum);
         exit(1);
     }
+
+    /* tag it */
+    midiTagStream(hstate->ofstream, "[mousebow] track=%d", pstate->track);
 
     /* set the expression of each channel; FIXME: also writes it into the 0
      * track of the file, which will be redundant with multiple runs of
