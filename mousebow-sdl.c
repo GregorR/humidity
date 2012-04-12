@@ -52,7 +52,7 @@
 #define H 320
 
 /* smooth over SMOOTH seconds */
-#define SMOOTH 0.2
+#define SMOOTH 0.4
 
 /* properties of reading the mouse */
 /* to what power should we raise mouse input? 0.25 is typical */
@@ -112,7 +112,7 @@ int init(HS)
     pstate->lastVelocity = pstate->nextVelocity = -1;
     pstate->mouseVelocity = -100;
     pstate->mouseLastSign = -1;
-    pstate->lastExpressionModVal = 64;
+    pstate->lastExpressionModVal = 32;
     pstate->track = -1;
     return 1;
 }
@@ -146,11 +146,16 @@ int begin(HS)
         exit(1);
     }
 
-    /* set the expression of each channel */
+    /* set the expression of each channel; FIXME: also writes it into the 0
+     * track of the file, which will be redundant with multiple runs of
+     * mousebow */
     for (i = 0; i < 16; i++) {
+        MfEvent *event;
         PmMessage msg;
-        msg = Pm_Message((MIDI_CONTROLLER<<4) + i, 11 /* expression */, 64);
+        event = Mf_NewEvent();
+        msg = event->e.message = Pm_Message(Pm_MessageStatusGen(MIDI_CONTROLLER, i), 11 /* expression */, 32);
         Pm_WriteShort(hstate->odstream, 0, msg);
+        Mf_StreamWriteOne(hstate->ofstream, 0, event);
     };
 
     /* set up SDL ... */
@@ -335,12 +340,12 @@ int tickPreMidi(HS, PtTimestamp timestamp)
 
 #if 0
             /* now use the last expression to adjust the new velocity, since we can't change the expression too fast */
-            pstate->lastVelocity /= (double) pstate->lastExpressionModVal / 64.0;
+            pstate->lastVelocity /= (double) pstate->lastExpressionModVal / 32.0;
 #endif
-            pstate->lastExpressionModVal = 64;
+            pstate->lastExpressionModVal = 32;
 
             /* if we're too quiet, it'll barely even play, let expression take care of it */
-            if (pstate->lastVelocity < 64) pstate->lastVelocity = 64;
+            if (pstate->lastVelocity < 32) pstate->lastVelocity = 32;
             if (pstate->lastVelocity > 127) pstate->lastVelocity = 127;
 
             /* OK, let the beat go on */
@@ -361,7 +366,7 @@ int tickWithMidi(HS, PtTimestamp timestamp, uint32_t tmTick)
     MfEvent *event;
 
     if (tmTick > pstate->lastExpressionMod) {
-        int vol = ((double) pstate->velocity) / ((double) pstate->lastVelocity) * 64;
+        int vol = ((double) pstate->velocity) / ((double) pstate->lastVelocity) * 32;
         if (vol < 0) vol = 0;
         if (vol > 127) vol = 127;
         if (abs(vol - pstate->lastExpressionModVal) > 1) {

@@ -32,9 +32,11 @@
 
 #include "args.h"
 #include "helpers.h"
+#include "hgid.h"
 #include "hplugin.h"
 #include "midifile/midi.h"
 #include "midifile/midifstream.h"
+#include "miditag.h"
 #include "pmhelpers.h"
 #include "whereami.h"
 
@@ -47,7 +49,7 @@ static struct HumidityState globalHState;
 /* our currently loaded plugin */
 static int hplugins;
 static struct HumidityPlugin hplugin[HUMIDITY_MAX_PLUGINS];
-#define PFUNC(var, cond, comb, f, args) do { \
+#define PCALL(var, cond, comb, f, args) do { \
     int __hplugin_i; \
     for (__hplugin_i = 0; __hplugin_i < hplugins; __hplugin_i++) { \
         if (hplugin[__hplugin_i].f && cond) { \
@@ -89,7 +91,7 @@ int main(int argc, char **argv)
             argir++;
         } else {
             int ah = 0;
-            PFUNC(ah, !ah, |=, argHandler, (PA, argi, argv));
+            PCALL(ah, !ah, |=, argHandler, (PA, argi, argv));
             if (!ah)
                 hostArg(hstate, argi, argv);
         }
@@ -147,18 +149,24 @@ int main(int argc, char **argv)
         Mf_NewTrack(of);
     hstate->ofstream = Mf_OpenStream(of);
 
+    /* write a comment at the beginning for our version */
+    midiTagStream(hstate->ofstream, "Humidity %s, plugins:", humidityVersion);
+
     /* any plugin initialization */
     {
         int pinit = 1;
-        PFUNC(pinit, pinit, &=, begin, (PA));
+        PCALL(pinit, pinit, &=, begin, (PA));
         if (!pinit) exit(1);
     }
+
+    /* then write our URL, to bracket any comments added by the plugins */
+    midiTagStream(hstate->ofstream, "-- http://bitbucket.org/GregorR/humidity --");
 
     ready = 1;
 
     /* do some sort of main loop */
     i = 0;
-    PFUNC(i, !i, |=, mainLoop, (PA));
+    PCALL(i, !i, |=, mainLoop, (PA));
     if (!i) while (1) Pt_Sleep(1<<30);
 
     return 1; /* shouldn't get here */
@@ -207,17 +215,9 @@ int tryLoadPlugin(void **plugin, char *pluginFn)
 
 void loadPluginFuncs(struct HumidityState *hstate, void *plugin)
 {
-#define LFUNC(nm) hplugin[hplugins].nm = (hplugin_ ## nm ## _t) (size_t) dlsym(plugin, #nm);
-    LFUNC(init);
-    LFUNC(argHandler);
-    LFUNC(usage);
-    LFUNC(begin);
-    LFUNC(mainLoop);
-    LFUNC(tickPreMidi);
-    LFUNC(tickWithMidi);
-    LFUNC(handleEvent);
-    LFUNC(quit);
-#undef LFUNC
+#define PFUNC(type, nm, args) hplugin[hplugins].nm = (hplugin_ ## nm ## _t) (size_t) dlsym(plugin, #nm);
+#include "hplugin_functions.h"
+#undef PFUNC
 
     if (hplugin[hplugins].init) {
         /* call its initializer */
@@ -247,7 +247,7 @@ void usage(struct HumidityState *hstate)
     int pusage = 0;
     fprintf(stderr, "Usage: humidity -o <output device> -p <plugin> [plugin options] <input file> <output file>\n"
                     "       humidity -l: List devices\n");
-    PFUNC(pusage, 1, |=, usage, (PA));
+    PCALL(pusage, 1, |=, usage, (PA));
 }
 
 void handler(PtTimestamp timestamp, void *vphstate)
@@ -261,7 +261,7 @@ void handler(PtTimestamp timestamp, void *vphstate)
 
     /* call pre-MIDI stuff */
     tmpi = 1;
-    PFUNC(tmpi, tmpi, &=, tickPreMidi, (PA, timestamp));
+    PCALL(tmpi, tmpi, &=, tickPreMidi, (PA, timestamp));
     if (!tmpi) return;
 
     /* don't do anything if we shouldn't start yet */
@@ -273,7 +273,7 @@ void handler(PtTimestamp timestamp, void *vphstate)
 
     /* now that we know where we are, tell the plugins */
     tmpi = 1;
-    PFUNC(tmpi, tmpi, &=, tickWithMidi, (PA, timestamp, tmTick));
+    PCALL(tmpi, tmpi, &=, tickWithMidi, (PA, timestamp, tmTick));
     if (!tmpi) return;
 
     while (Mf_StreamReadUntil(hstate->ifstream, &event, &rtrack, 1, tmTick) == 1) {
@@ -289,7 +289,7 @@ void handler(PtTimestamp timestamp, void *vphstate)
             /* perhaps a plugin will handle this event */
             writeOut = 0;
             tmpi = 1;
-            PFUNC(tmpi, tmpi, &=, handleEvent, (PA, timestamp, tmTick, rtrack, event, &writeOut));
+            PCALL(tmpi, tmpi, &=, handleEvent, (PA, timestamp, tmTick, rtrack, event, &writeOut));
             if (tmpi) {
                 Pm_WriteShort(hstate->odstream, 0, event->e.message);
                 if (writeOut) {
@@ -320,7 +320,7 @@ void handler(PtTimestamp timestamp, void *vphstate)
 
         /* quit somehow */
         tmpi = 0;
-        PFUNC(tmpi, !tmpi, |=, quit, (PA, 0));
+        PCALL(tmpi, !tmpi, |=, quit, (PA, 0));
         if (!tmpi) exit(0);
     }
 }

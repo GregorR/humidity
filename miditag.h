@@ -20,16 +20,13 @@
  * SOFTWARE.
  */
 
-#define IN_HUMIDITY_PLUGIN Play
+#ifndef MIDITAG_H
+#define MIDITAG_H
 
-#include <stdio.h>
+#include <stdarg.h>
+#include "midifile/midifstream.h"
 
-#include "hplugin.h"
-#include "miditag.h"
+int vmidiTagStream(MfStream *stream, const char *format, va_list ap);
+int midiTagStream(MfStream *stream, const char *format, ...);
 
-int begin(HS)
-{
-    midiTagStream(hstate->ofstream, "[play]");
-    hstate->nextTick = 0x7FFFFFFF; /* just set it huge so we never stop playback */
-    return 1;
-}
+#endif

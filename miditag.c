@@ -20,16 +20,58 @@
  * SOFTWARE.
  */
 
-#define IN_HUMIDITY_PLUGIN Play
+#define _POSIX_C_SOURCE 200112L /* for vsnprintf */
 
 #include <stdio.h>
+#include <string.h>
 
-#include "hplugin.h"
+#include "helpers.h"
+#include "midifile/midi.h"
 #include "miditag.h"
 
-int begin(HS)
+#ifndef va_copy
+#ifdef __va_copy
+#define va_copy __va_copy
+#endif
+#endif
+
+int vmidiTagStream(MfStream *stream, const char *format, va_list ap)
 {
-    midiTagStream(hstate->ofstream, "[play]");
-    hstate->nextTick = 0x7FFFFFFF; /* just set it huge so we never stop playback */
-    return 1;
+    char *buf = NULL;
+    int bufsz, written;
+    MfEvent *event;
+    va_list apc;
+
+    /* write it to the buffer */
+    written = 1;
+    do {
+        bufsz = written + 1;
+        SF(buf, realloc, NULL, (buf, bufsz));
+        va_copy(apc, ap);
+        written = vsnprintf(buf, bufsz, format, apc);
+        va_end(apc);
+    } while (written >= bufsz);
+
+    /* then write it to the file */
+    event = Mf_NewEvent();
+    event->e.message = Pm_Message(MIDI_STATUS_META, 0, 0);
+    event->meta = Mf_NewMeta(written);
+    event->meta->type = MIDI_M_TEXT;
+    strcpy((char *) event->meta->data, buf);
+    Mf_StreamWriteOne(stream, 0, event);
+
+    /* get rid of our buffer */
+    free(buf);
+
+    return written;
+}
+
+int midiTagStream(MfStream *stream, const char *format, ...)
+{
+    va_list ap;
+    int ret;
+    va_start(ap, format);
+    ret = vmidiTagStream(stream, format, ap);
+    va_end(ap);
+    return ret;
 }

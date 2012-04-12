@@ -28,10 +28,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "args.h"
 #include "helpers.h"
 #include "hplugin.h"
 #include "midifile/midi.h"
 #include "midifile/midifstream.h"
+#include "miditag.h"
 #include "pmhelpers.h"
 
 #define METRO_PER_QN 24
@@ -62,34 +64,36 @@ int init(HS)
     return 1;
 }
 
+int argHandler(HS, int *argi, char **argv)
+{
+    STATE;
+    char *arg = argv[*argi];
+    ARGN(t, track) {
+        pstate->track = atoi(argv[++*argi]);
+        ++*argi;
+        return 1;
+    }
+    return 0;
+}
+
 int begin(HS)
 {
+    STATE;
+
     /* need an input device */
     if (hstate->idev == -1) {
         usage(hstate, pnum);
         exit(1);
     }
 
-#if 0
-    Is this necessary?
-    /* peek for first events */
-    do {
-        rd = peek(hstate->ifstream, events, tracks, MAX_SIMUL, &hstate->nextTick);
-        for (i = 0; i < rd; i++) {
-            if (!events[i]->meta) {
-                Pm_WriteShort(odstream, 0, events[i]->e.message);
-            }
-            Mf_FreeEvent(events[i]);
-        }
-    } while (hstate->nextTick == -1);
-#endif
+    midiTagStream(hstate->ofstream, "[notetapper] track=%d", pstate->track);
 
     return 1;
 }
 
 int usage(HS)
 {
-    fprintf(stderr, "notetapper usage: -p notetapper -i <input device>\n");
+    fprintf(stderr, "notetapper usage: -p notetapper -i <input device> -t <track>\n");
     return 1;
 }
 
@@ -101,12 +105,13 @@ static void findNextTick(HS, uint32_t atleast)
 
     /* look for the very next note */
     for (rtrack = (pstate->track < 0) ? 0 : pstate->track;
-         rtrack < (pstate->track < 0) ? hstate->ifstream->file->trackCt : (pstate->track + 1);
+         rtrack < ((pstate->track < 0) ? hstate->ifstream->file->trackCt : (pstate->track + 1));
          rtrack++) {
-        MfTrack *mtrack = hstate->ifstream->file->tracks[pstate->track];
+        MfTrack *mtrack = hstate->ifstream->file->tracks[rtrack];
         MfEvent *cur;
         for (cur = mtrack->head; cur; cur = cur->next) {
             if (cur->absoluteTm > earliest) break;
+            fprintf(stderr, ".\n");
             if (cur->absoluteTm >= atleast &&
                 Pm_MessageType(cur->e.message) == MIDI_NOTE_ON &&
                 Pm_MessageData2(cur->e.message) > 0) {
@@ -115,6 +120,7 @@ static void findNextTick(HS, uint32_t atleast)
             }
         }
     }
+    fprintf(stderr, "Next tick is %d (%d)\n", (int) earliest, (int) atleast);
     hstate->nextTick = earliest;
 }
 
@@ -166,6 +172,43 @@ static void handleBeat(HS, PtTimestamp ts)
     pstate->lastTs = ts;
 }
 
+/* controller info */
+struct Controller {
+    uint8_t seen, ranged, baseval, lastval;
+};
+struct Controller controllers[128];
+
+void handleController(HS, PtTimestamp ts, uint8_t cnum, uint8_t val)
+{
+    STATE;
+    struct Controller cont = controllers[cnum];
+
+    /* figure out what we can about it */
+    if (!cont.seen) {
+        cont.seen = 1;
+        if (val != 0 && val != 127) {
+            /* it's probably ranged */
+            cont.ranged = 1;
+        } else {
+            cont.ranged = 0;
+        }
+        cont.baseval = val;
+    } else if (!cont.ranged && val != 0 && val != 127) {
+        /* whoops, we were wrong! */
+        cont.ranged = 0;
+        cont.baseval = val;
+    }
+    cont.lastval = val;
+
+    controllers[cnum] = cont;
+
+    if (cont.ranged) {
+        pstate->lastVelocity = val;
+    } else if (val > 0) {
+        handleBeat(hstate, pnum, ts);
+    }
+}
+
 int tickPreMidi(HS, PtTimestamp timestamp)
 {
     STATE;
@@ -187,6 +230,11 @@ int tickPreMidi(HS, PtTimestamp timestamp)
 
             /* and handle the beat */
             handleBeat(hstate, pnum, timestamp);
+
+        } else if (type == MIDI_CONTROLLER) {
+            handleController(hstate, pnum, timestamp,
+                Pm_MessageData1(ev.message), Pm_MessageData2(ev.message));
+
         }
     }
 
