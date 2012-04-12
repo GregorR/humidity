@@ -38,11 +38,6 @@ Humanification tools:
 
 
 Other MIDI-related tools:
- * chgvel
-    Reduce the velocity range of a file to the top 1/nth of the range. Useful
-    for inputs with extremely high dynamic range (such as this author's digital
-    piano).
-
  * dumpdev
     Dumps all the input from a MIDI device.
 
@@ -52,6 +47,11 @@ Other MIDI-related tools:
  * hmergemidis
     Merges two MIDI files, preferring the right when ambiguous. Useful to merge
     the output of /all/ of the humanification tools into a "final" MIDI.
+
+ * hreducevel
+    Reduce the velocity range of a file to the top 1/nth of the range. Useful
+    for inputs with extremely high dynamic range (such as this author's digital
+    piano).
 
  * temposmoother
     Smooths out tempo changes in a MIDI file. Makes the output from notetapper,

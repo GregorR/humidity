@@ -47,7 +47,7 @@ int main(int argc, char **argv)
     int writtenTag = 0;
 
     if (argc < 4) {
-        fprintf(stderr, "Use: mergefiles <input file 1> <input file 2> <output file>\n");
+        fprintf(stderr, "Use: hmergemidis <input file 1> <input file 2> <output file>\n");
         return 1;
     }
 

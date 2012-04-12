@@ -40,7 +40,7 @@ int main(int argc, char **argv)
     int redux;
 
     if (argc < 4) {
-        fprintf(stderr, "Use: chgvel <file> <output file> <range reduction>\n");
+        fprintf(stderr, "Use: hreducevel <file> <output file> <range reduction>\n");
         return 1;
     }
     redux = atoi(argv[3]);

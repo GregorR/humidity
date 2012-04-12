@@ -111,7 +111,6 @@ static void findNextTick(HS, uint32_t atleast)
         MfEvent *cur;
         for (cur = mtrack->head; cur; cur = cur->next) {
             if (cur->absoluteTm > earliest) break;
-            fprintf(stderr, ".\n");
             if (cur->absoluteTm >= atleast &&
                 Pm_MessageType(cur->e.message) == MIDI_NOTE_ON &&
                 Pm_MessageData2(cur->e.message) > 0) {
@@ -120,7 +119,6 @@ static void findNextTick(HS, uint32_t atleast)
             }
         }
     }
-    fprintf(stderr, "Next tick is %d (%d)\n", (int) earliest, (int) atleast);
     hstate->nextTick = earliest;
 }
 

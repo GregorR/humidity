@@ -9,7 +9,7 @@ MIDIFILE_LIBS=-lmidifile
 SDL_LIBS=-lSDL
 ELDFLAGS=
 
-TARGETS=dumpfile dumpdev chgvel timesigfixer temposmoother hmergemidis humidity \
+TARGETS=dumpfile dumpdev hreducevel timesigfixer temposmoother hmergemidis humidity \
     play.so mousebow.so notetapper.so
 
 all: $(TARGETS)
