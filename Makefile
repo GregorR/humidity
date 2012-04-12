@@ -9,7 +9,7 @@ MIDIFILE_LIBS=-lmidifile
 SDL_LIBS=-lSDL
 ELDFLAGS=
 
-TARGETS=dumpfile dumpdev chgvel timesigfixer temposmoother mergefiles humidity \
+TARGETS=dumpfile dumpdev chgvel timesigfixer temposmoother hmergemidis humidity \
     play.so mousebow.so notetapper.so
 
 all: $(TARGETS)
@@ -40,7 +40,7 @@ dumpdev: dumpdev.o
 
 # ID file used for version specification
 hgid.h: .hg/dirstate
-	( echo -n 'const char *humidityVersion = "' ; hg id -i | tr -d '\n' ; echo '";' ) > hgid.h
+	( echo -n 'static const char *humidityVersion = "' ; hg id -i | tr -d '\n' ; echo '";' ) > hgid.h
 
 clean:
 	rm -f *.o $(TARGETS)

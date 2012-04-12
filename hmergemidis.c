@@ -28,6 +28,7 @@
 #include "midifile/midi.h"
 #include "midifile/midifile.h"
 #include "midifile/midifstream.h"
+#include "miditag.h"
 #include "pmhelpers.h"
 
 #define MAX_SIMUL 1024
@@ -43,6 +44,7 @@ int main(int argc, char **argv)
     int rd, i;
     MfEvent *events[MAX_SIMUL];
     int tracks[MAX_SIMUL];
+    int writtenTag = 0;
 
     if (argc < 4) {
         fprintf(stderr, "Use: mergefiles <input file 1> <input file 2> <output file>\n");
@@ -79,6 +81,12 @@ int main(int argc, char **argv)
         t1 = Mf_StreamNext(ims1);
         t = Mf_StreamNext(ims2);
         if (t1 < t) t = t1;
+
+        if (t > 0 && !writtenTag) {
+            midiTagStreamHeader(oms, "hmergemidis ", NULL);
+            midiTagStreamFooter(oms);
+            writtenTag = 1;
+        }
 
         /* read all events at this time */
         rd = Mf_StreamReadUntil(ims1, events, tracks, MAX_SIMUL, t);

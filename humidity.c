@@ -32,7 +32,6 @@
 
 #include "args.h"
 #include "helpers.h"
-#include "hgid.h"
 #include "hplugin.h"
 #include "midifile/midi.h"
 #include "midifile/midifstream.h"
@@ -150,7 +149,7 @@ int main(int argc, char **argv)
     hstate->ofstream = Mf_OpenStream(of);
 
     /* write a comment at the beginning for our version */
-    midiTagStream(hstate->ofstream, "Humidity %s, plugins:", humidityVersion);
+    midiTagStreamHeader(hstate->ofstream, NULL, ", plugins:");
 
     /* any plugin initialization */
     {
@@ -160,7 +159,7 @@ int main(int argc, char **argv)
     }
 
     /* then write our URL, to bracket any comments added by the plugins */
-    midiTagStream(hstate->ofstream, "-- http://bitbucket.org/GregorR/humidity --");
+    midiTagStreamFooter(hstate->ofstream);
 
     ready = 1;
 

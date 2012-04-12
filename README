@@ -49,7 +49,7 @@ Other MIDI-related tools:
  * dumpfile
     Dumps all the events in a MIDI file.
 
- * mergefiles
+ * hmergemidis
     Merges two MIDI files, preferring the right when ambiguous. Useful to merge
     the output of /all/ of the humanification tools into a "final" MIDI.
 

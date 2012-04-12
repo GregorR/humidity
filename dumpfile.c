@@ -101,7 +101,16 @@ void dump(MfEvent *event)
             (int) Pm_MessageData1(ev.message),
             (int) Pm_MessageData2(ev.message));
     } else if (event->meta) {
-        printf("%02X len=%d\n", (int) event->meta->type, (int) event->meta->length);
+        if (event->meta->type >= MIDI_M_TEXT && event->meta->type <= MIDI_M_CUE) {
+            /* it's text data */
+            printf("%02X text=%s\n", (int) event->meta->type, (char *) event->meta->data);
+        } else {
+            int i;
+            printf("%02X len=%d data=", (int) event->meta->type, (int) event->meta->length);
+            for (i = 0; i < event->meta->length; i++)
+                printf("%02X", (int) event->meta->data[i]);
+            printf("\n");
+        }
     } else {
         printf("???\n");
     }

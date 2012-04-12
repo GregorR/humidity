@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "helpers.h"
+#include "hgid.h"
 #include "midifile/midi.h"
 #include "miditag.h"
 
@@ -74,4 +75,17 @@ int midiTagStream(MfStream *stream, const char *format, ...)
     ret = vmidiTagStream(stream, format, ap);
     va_end(ap);
     return ret;
+}
+
+/* tag a MIDI stream with our generic header, pre and post optional (which go
+ * pre- and post- version) */
+int midiTagStreamHeader(MfStream *stream, const char *pre, const char *post)
+{
+    return midiTagStream(stream, "Humidity %s%s%s", pre?pre:"", humidityVersion, post?post:"");
+}
+
+/* tag a MIDI stream with our generic footer */
+int midiTagStreamFooter(MfStream *stream)
+{
+    return midiTagStream(stream, "-- http://bitbucket.org/GregorR/humidity --");
 }

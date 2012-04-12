@@ -26,7 +26,15 @@
 #include <stdarg.h>
 #include "midifile/midifstream.h"
 
+/* tag a MIDI stream in *printf style */
 int vmidiTagStream(MfStream *stream, const char *format, va_list ap);
 int midiTagStream(MfStream *stream, const char *format, ...);
+
+/* tag a MIDI stream with our generic header, pre and post optional (which go
+ * pre- and post- version) */
+int midiTagStreamHeader(MfStream *stream, const char *pre, const char *post);
+
+/* tag a MIDI stream with our generic footer */
+int midiTagStreamFooter(MfStream *stream);
 
 #endif
