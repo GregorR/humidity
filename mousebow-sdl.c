@@ -76,11 +76,8 @@ struct MouseBowState {
     /* instantaneous velocity coming from the mouse, adjusted to be MIDI in tickPreMidi */
     int32_t velocity;
 
-    /* velocity as-played of the last (still-playing) note as played */
+    /* velocity as-played of the last (still-playing) note */
     int32_t lastVelocity;
-
-    /* velocity of the next note as written */
-    int32_t nextVelocity;
 
     /* mouse control */
     int mouseVelocity;
@@ -110,10 +107,10 @@ int init(HS)
     struct MouseBowState *pstate;
     SF(pstate, calloc, NULL, (1, sizeof(struct MouseBowState)));
     hstate->pstate[pnum] = (void *) pstate;
-    pstate->lastVelocity = pstate->nextVelocity = -1;
+    pstate->lastVelocity = -1;
     pstate->mouseVelocity = -100;
     pstate->mouseLastSign = -1;
-    pstate->lastExpressionModVal = 32;
+    pstate->lastExpressionModVal = 64;
     pstate->track = -1;
     return 1;
 }
@@ -150,17 +147,17 @@ int begin(HS)
     /* tag it */
     midiTagStream(hstate->ofstream, "[mousebow] track=%d", pstate->track);
 
-    /* set the expression of each channel; FIXME: also writes it into the 0
+    /* set the expression of each channel; FIXME: always writes it into the 0
      * track of the file, which will be redundant with multiple runs of
      * mousebow */
     for (i = 0; i < 16; i++) {
         MfEvent *event;
         PmMessage msg;
         event = Mf_NewEvent();
-        msg = event->e.message = Pm_Message(Pm_MessageStatusGen(MIDI_CONTROLLER, i), 11 /* expression */, 32);
+        msg = event->e.message = Pm_Message(Pm_MessageStatusGen(MIDI_CONTROLLER, i), 11 /* expression */, 64);
         Pm_WriteShort(hstate->odstream, 0, msg);
         Mf_StreamWriteOne(hstate->ofstream, 0, event);
-    };
+    }
 
     /* set up SDL ... */
     SDL(tmpi, SDL_Init, < 0, (SDL_INIT_VIDEO|SDL_INIT_TIMER));
@@ -294,14 +291,12 @@ int findNextTick(HS, uint32_t atleast)
             Pm_MessageType(cur->e.message) == MIDI_NOTE_ON &&
             Pm_MessageData2(cur->e.message) > 0) {
             hstate->nextTick = cur->absoluteTm;
-            pstate->nextVelocity = Pm_MessageData2(cur->e.message);
             return 1;
         }
     }
 
     /* didn't find one, set it huge */
     hstate->nextTick = 0x7FFFFFFF;
-    pstate->nextVelocity = 100;
     return 0;
 }
 
@@ -344,12 +339,12 @@ int tickPreMidi(HS, PtTimestamp timestamp)
 
 #if 0
             /* now use the last expression to adjust the new velocity, since we can't change the expression too fast */
-            pstate->lastVelocity /= (double) pstate->lastExpressionModVal / 32.0;
+            pstate->lastVelocity /= (double) pstate->lastExpressionModVal / 64.0;
 #endif
-            pstate->lastExpressionModVal = 32;
+            pstate->lastExpressionModVal = 64;
 
             /* if we're too quiet, it'll barely even play, let expression take care of it */
-            if (pstate->lastVelocity < 32) pstate->lastVelocity = 32;
+            if (pstate->lastVelocity < 64) pstate->lastVelocity = 64;
             if (pstate->lastVelocity > 127) pstate->lastVelocity = 127;
 
             /* OK, let the beat go on */
@@ -370,7 +365,7 @@ int tickWithMidi(HS, PtTimestamp timestamp, uint32_t tmTick)
     MfEvent *event;
 
     if (tmTick > pstate->lastExpressionMod) {
-        int vol = ((double) pstate->velocity) / ((double) pstate->lastVelocity) * 32;
+        int vol = ((double) pstate->velocity) / ((double) pstate->lastVelocity) * 64;
         if (vol < 0) vol = 0;
         if (vol > 127) vol = 127;
         if (abs(vol - pstate->lastExpressionModVal) > 1) {
@@ -381,7 +376,7 @@ int tickWithMidi(HS, PtTimestamp timestamp, uint32_t tmTick)
         pstate->lastExpressionModVal = vol;
         event = Mf_NewEvent();
         event->absoluteTm = tmTick;
-        event->e.message = Pm_Message((MIDI_CONTROLLER<<4) + pstate->track - 1, 11 /* expression */, vol);
+        event->e.message = Pm_Message(Pm_MessageStatusGen(MIDI_CONTROLLER, pstate->track - 1), 11 /* expression */, vol);
         Mf_StreamWriteOne(hstate->ofstream, pstate->track, event);
         Pm_WriteShort(hstate->odstream, 0, event->e.message);
         pstate->lastExpressionMod = tmTick;
