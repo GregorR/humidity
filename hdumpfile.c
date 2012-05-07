@@ -43,7 +43,7 @@ int main(int argc, char **argv)
     MfEvent *cur;
 
     if (argc < 2) {
-        fprintf(stderr, "Use: dumpfile <file> [output file]\n");
+        fprintf(stderr, "Use: hdumpfile <file> [output file]\n");
         return 1;
     }
 

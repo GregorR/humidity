@@ -44,7 +44,7 @@ int main(int argc, char **argv)
     int32_t lastTempo = 0;
 
     if (argc < 3) {
-        fprintf(stderr, "Use: temposmoother <input file> <output file>\n");
+        fprintf(stderr, "Use: htemposmoother <input file> <output file>\n");
         return 1;
     }
 

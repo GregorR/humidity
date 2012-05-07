@@ -41,7 +41,7 @@ int main(int argc, char **argv)
     MfEvent *cur;
 
     if (argc < 3) {
-        fprintf(stderr, "Use: timesigfixer <file> <output file>\n");
+        fprintf(stderr, "Use: htimesigfixer <file> <output file>\n");
         return 1;
     }
 

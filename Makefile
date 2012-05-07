@@ -9,8 +9,13 @@ MIDIFILE_LIBS=-lmidifile
 SDL_LIBS=-lSDL
 ELDFLAGS=
 
-TARGETS=dumpfile dumpdev hreducevel timesigfixer temposmoother hmergemidis humidity \
-    play.so mousebow.so notetapper.so
+PREFIX=/usr
+PREFIX_BIN=$(PREFIX)/bin
+PREFIX_PLUGINS=$(PREFIX)/lib/humidity
+
+PROGRAMS=hdumpfile hdumpdev hreducevel htimesigfixer htemposmoother hmergemidis humidity
+PLUGINS=play.so mousebow.so notetapper.so
+TARGETS=$(PROGRAMS) $(PLUGINS)
 
 all: $(TARGETS)
 
@@ -41,6 +46,12 @@ dumpdev: dumpdev.o
 # ID file used for version specification
 hgid.h: .hg/dirstate
 	( echo -n 'static const char *humidityVersion = "' ; hg id -i | tr -d '\n' ; echo '";' ) > hgid.h
+
+install: $(TARGETS)
+	mkdir -p $(PREFIX_BIN)
+	install -s $(PROGRAMS) $(PREFIX_BIN)/
+	mkdir -p $(PREFIX_PLUGINS)
+	install -s $(PLUGINS) $(PREFIX_PLUGINS)/
 
 clean:
 	rm -f *.o $(TARGETS)
