@@ -93,7 +93,6 @@ int argHandler(HS, int *argi, char **argv)
         ++*argi; return 1;
 
     } else ARG(e, expression) {
-        pstate->velocityMod = 1;
         pstate->expressionMod = 1;
         ++*argi; return 1;
 
@@ -113,7 +112,7 @@ int begin(HS)
     }
 
     /* need some consistency to the arguments */
-    if (pstate->velocityMod && !pstate->expressionMod)
+    if (!pstate->velocityMod && pstate->expressionMod)
         pstate->velocityMod = 1;
 
     if (pstate->expressionMod) {
