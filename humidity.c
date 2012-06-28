@@ -277,11 +277,22 @@ void handler(PtTimestamp timestamp, void *vphstate)
 
     while (Mf_StreamReadUntil(hstate->ifstream, &event, &rtrack, 1, tmTick) == 1) {
         if (event->meta) {
-            if (event->meta->type == MIDI_M_TEMPO &&
-                event->meta->length == MIDI_M_TEMPO_LENGTH) {
-                PtTimestamp ts;
-                uint32_t tempo = MIDI_M_TEMPO_N(event->meta->data);
-                Mf_StreamSetTempoTick(hstate->ifstream, &ts, event->absoluteTm, tempo);
+            /* perhaps a plugin will handle this event */
+            writeOut = 0;
+            tmpi = 1;
+            PCALL(tmpi, tmpi, &=, handleMetaEvent, (PA, timestamp, tmTick, rtrack, event, &writeOut));
+            if (tmpi) {
+                if (event->meta->type == MIDI_M_TEMPO &&
+                        event->meta->length == MIDI_M_TEMPO_LENGTH) {
+                    PtTimestamp ts;
+                    uint32_t tempo = MIDI_M_TEMPO_N(event->meta->data);
+                    Mf_StreamSetTempoTick(hstate->ifstream, &ts, event->absoluteTm, tempo);
+                }
+
+                if (writeOut) {
+                    fprintf(stderr, "FIXME: writeOut for handleMetaEvent currently not supported.\n");
+                    exit(1);
+                }
             }
 
         } else {

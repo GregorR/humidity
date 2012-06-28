@@ -14,7 +14,7 @@ PREFIX_BIN=$(PREFIX)/bin
 PREFIX_PLUGINS=$(PREFIX)/lib/humidity
 
 PROGRAMS=hdumpfile hdumpdev hreducevel htimesigfixer htemposmoother hmergemidis humidity
-PLUGINS=play.so mousebow.so notetapper.so
+PLUGINS=mousebow.so notetapper.so play.so tempotapper.so
 TARGETS=$(PROGRAMS) $(PLUGINS)
 
 all: $(TARGETS)

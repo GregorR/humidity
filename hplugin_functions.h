@@ -50,6 +50,13 @@ PFUNC(int, tickWithMidi, (HS, PtTimestamp, uint32_t))
  * event to the output file, defaulting to 0 (no) */
 PFUNC(int, handleEvent, (HS, PtTimestamp, uint32_t, int, MfEvent *, int *))
 
+/* called whenever a meta event is received. Return 1 to handle the event (only
+ * tempo events are meaningfully handled by humidity itself, but other plugins
+ * may care about other events), 0 to quash it. The last argument is whether to
+ * write the (presumably modified) event to the output file, defaulting to 0
+ * (no); it is currently unsupported, but present for future support. */
+PFUNC(int, handleMetaEvent, (HS, PtTimestamp, uint32_t, int, MfEvent *, int *))
+
 /* if you need a special way to quit (exit(0) won't work), accept this function
  * and return 1 */
 PFUNC(int, quit, (HS, int))
